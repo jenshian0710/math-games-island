@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>《怒海棋兵暖身活動》- 必勝引導版</title>
+    <style>
+        :root {
+            --wood-bg: #4a2e15; --wood-dark: #2a1808;
+            --panel-bg: rgba(45, 25, 12, 0.85);
+            --metal-border: #6d757d;
+            --coin-gold: #f2ba38; --coin-shadow: #996e08;
+            --ribbon-blue: #22739e; --ribbon-blue-dark: #144e6d;
+            --title-orange: #f59622;
+            --text-main: #f2e2c4; --text-muted: #c4ab89;
+        }
+        body {
+            margin: 0; padding: 20px; color: var(--text-main);
+            background-color: var(--wood-bg);
+            background-image: repeating-linear-gradient(to bottom, #4a2e15, #4a2e15 38px, #36200d 40px, #36200d 40px);
+            font-family: '微軟正黑體', 'Microsoft JhengHei', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        h1 { 
+            color: var(--title-orange); 
+            text-shadow: 2px 2px 0px var(--ribbon-blue-dark), -1px -1px 0px var(--ribbon-blue-dark), 
+                         1px -1px 0px var(--ribbon-blue-dark), -1px 1px 0px var(--ribbon-blue-dark), 
+                         0 4px 8px rgba(0,0,0,0.8); 
+            letter-spacing: 2px; margin-bottom: 5px; font-size: 2.5em; text-align: center;
+        }
+        .credit { text-align: center; color: var(--text-muted); margin-bottom: 20px; font-size: 1.1em; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+        
+        .panel {
+            background: var(--panel-bg); border: 6px solid var(--metal-border); 
+            border-radius: 6px; padding: 20px; width: 100%; max-width: 800px; 
+            box-shadow: inset 0 0 20px #000, 0 6px 15px rgba(0, 0, 0, 0.7); margin-bottom: 20px;
+        }
+        
+        button {
+            background: linear-gradient(to bottom, #d6a965, #b8853b); color: #fff; 
+            border: 1px solid #5c3f15; padding: 8px 16px; cursor: pointer; 
+            font-family: inherit; font-weight: bold; transition: all 0.2s; 
+            margin: 5px; text-transform: uppercase; border-radius: 4px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.6); box-shadow: 0 3px 5px rgba(0,0,0,0.4);
+        }
+        button:hover { background: linear-gradient(to bottom, #ebc386, #cda057); transform: translateY(-1px); }
+        button:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+        button.action-btn { background: linear-gradient(to bottom, #329bc4, var(--ribbon-blue)); border-color: var(--ribbon-blue-dark); }
+        button.action-btn:hover { background: linear-gradient(to bottom, #4cb8e3, #298cb8); }
+        button.danger-btn { background: linear-gradient(to bottom, #c24b3a, #8f291a); border-color: #5c140a; }
+        button.danger-btn:hover { background: linear-gradient(to bottom, #db6251, #ab3c2d); }
+        button.hint-btn { background: linear-gradient(to bottom, #5ba346, #3b732a); border-color: #1f4014; }
+        button.hint-btn:hover { background: linear-gradient(to bottom, #72c45a, #4a9135); }
+        
+        select, input { background: #e8d7b7; color: #422910; border: 2px solid #825b30; padding: 5px; font-family: inherit; font-weight: bold; border-radius: 3px; }
+        
+        #game-board { display: flex; justify-content: center; align-items: center; gap: 15px; min-height: 250px; margin: 30px 0; }
+        .board-grid { display: grid !important; grid-template-columns: repeat(4, 55px); grid-template-rows: repeat(4, 55px); gap: 15px; justify-content: center; }
+        .board-triangle { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .tri-row { display: flex; gap: 15px; }
+        
+        .piece {
+            width: 55px; height: 55px; border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, #ffda75, var(--coin-gold) 60%, var(--coin-shadow)); 
+            border: 2px solid #5c4103;
+            box-shadow: inset 1px 1px 3px rgba(255,255,255,0.6), 2px 3px 6px rgba(0,0,0,0.7);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; user-select: none; transition: 0.2s;
+            color: transparent; font-weight: 900; font-size: 18px; box-sizing: border-box;
+        }
+        .piece.show-id { color: #573e04; text-shadow: 1px 1px 0px rgba(255,255,255,0.4); }
+        .piece.selected { 
+            background: radial-gradient(circle at 35% 35%, #b6fc9d, #5ac435 60%, #206b0b); 
+            border-color: #103b03; box-shadow: 0 0 15px rgba(90, 196, 53, 0.8), inset 1px 1px 3px rgba(255,255,255,0.6); 
+        }
+        .piece.taken { opacity: 0.25; pointer-events: none; border-color: #1a0f07; background: var(--wood-dark); box-shadow: inset 3px 3px 6px rgba(0,0,0,0.9); }
+        
+        /* 提示高光 */
+        .piece.hint-highlight {
+            background: radial-gradient(circle at 35% 35%, #ffffff, #c7e8ff 60%, #68a2d1);
+            border-color: #fff; box-shadow: 0 0 20px rgba(255,255,255,0.9), inset 1px 1px 5px #fff;
+            animation: pulseHint 1.5s infinite alternate;
+        }
+        @keyframes pulseHint { from { transform: scale(1); box-shadow: 0 0 15px rgba(255,255,255,0.7); } to { transform: scale(1.1); box-shadow: 0 0 25px rgba(255,255,255,1); } }
+
+        .dashboard { display: flex; flex-direction: column; border-bottom: 2px dashed #6b4d31; padding-bottom: 15px; margin-bottom: 15px; }
+        .dashboard-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;}
+        .status-text { font-size: 1.2em; color: #76cdeb; font-weight: bold; text-shadow: 1px 1px 2px #000; }
+        
+        .rule-badge { border: 2px solid #368bb3; background: rgba(34, 115, 158, 0.8); color: #fff; padding: 5px 15px; border-radius: 20px; font-size: 0.9em; box-shadow: 1px 2px 4px rgba(0,0,0,0.5); font-weight: bold; }
+        .timer { font-size: 1.1em; color: var(--title-orange); font-weight: bold; text-shadow: 1px 1px 2px #000; }
+        .timer.warning { color: #f24b4b; animation: flash 0.5s infinite; }
+        @keyframes flash { 0%, 100% { opacity: 1; text-shadow: 0 0 10px #f24b4b; } 50% { opacity: 0.5; } }
+        
+        /* 提示解析框 */
+        #hint-box {
+            background: rgba(230, 213, 184, 0.95); color: #3b250d; border: 3px solid #825b30;
+            padding: 15px; border-radius: 8px; margin-top: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-size: 1.1em; line-height: 1.5;
+            position: relative;
+        }
+        #hint-box::before { content: '📜 必勝邏輯解析'; display: block; font-weight: 900; color: #9c2a1c; margin-bottom: 8px; font-size: 1.1em; border-bottom: 2px dotted #825b30; padding-bottom: 5px; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <h1>《怒海棋兵暖身活動》</h1>
+    <div class="credit">互動網頁設計：林口國中 李政憲老師</div>
+
+    <div id="setup-panel" class="panel">
+        <h3>>> 戰局參數設定</h3>
+        <p>勝利條件：
+            <select id="win-condition">
+                <option value="last-win">取走最後一顆者 獲勝</option>
+                <option value="last-lose">取走最後一顆者 失敗 (Misere)</option>
+            </select>
+        </p>
+        <p>地圖選擇：
+            <select id="map-select">
+                <option value="line">初階：一維直線 (12顆)</option>
+                <option value="grid">中階：4x4 矩陣 (16顆)</option>
+                <option value="triangle">進階：三角陣地 (15顆)</option>
+            </select>
+        </p>
+        <p>單次拿取上限：<input type="number" id="max-take" min="1" max="9" value="3"> 顆</p>
+        <p>真人玩家數量 (1-3)：<input type="number" id="human-count" min="1" max="3" value="1"></p>
+        <p>AI 玩家數量 (0-3)：<input type="number" id="ai-count" min="0" max="3" value="1"></p>
+        <button class="action-btn" onclick="startGame()">展開計時挑戰</button>
+    </div>
+
+    <div id="game-panel" class="panel hidden">
+        <div class="dashboard">
+            <div class="dashboard-top">
+                <div id="turn-indicator" class="status-text">系統待命...</div>
+                <div id="rule-display" class="rule-badge">目標：--</div>
+                <div id="timer-display" class="timer">總時: 00:00 | 倒數: --</div>
+            </div>
+            <div>
+                <button class="hint-btn" onclick="getStrategicHint()">💡 尋求必勝提示</button>
+                <button onclick="togglePieceIDs()">切換編號</button>
+                <button class="danger-btn" onclick="fullReset()">重置全關卡</button>
+            </div>
+        </div>
+        
+        <div id="hint-box" class="hidden">
+            <span id="hint-text">解析生成中...</span>
+        </div>
+
+        <div id="game-board"></div>
+        
+        <div id="controls" style="text-align: center; margin-top: 20px;">
+            <button class="action-btn" id="confirm-btn" onclick="confirmMove()">確認拿取</button>
+        </div>
+    </div>
+
+<script>
+    let players = [], currentPlayerIndex = 0;
+    let mapPieces = [], currentSelection = [];
+    let isGameOver = false;
+    let currentMapType = '';
+    let maxTakeLimit = 3;
+    let winMode = 'last-win';
+    
+    // 計時器
+    let turnTimeLimit = 15; 
+    let currentTurnTime = 15;
+    let startTime, timerInterval;
+
+    // AI 與提示的賽局運算快取
+    let solverMemo = new Map();
+    let validMoveMasks = [];
+
+    const GEOMETRY_LINES = {
+        line: [ [0,1,2,3,4,5,6,7,8,9,10,11] ],
+        grid: [
+            [0,1,2,3], [4,5,6,7], [8,9,10,11], [12,13,14,15], // 橫
+            [0,4,8,12], [1,5,9,13], [2,6,10,14], [3,7,11,15], // 直
+            [0,5,10,15], [3,6,9,12], // 長對角線
+            [1,6,11], [2,7], [4,9,14], [8,13], // 其他短斜線 (\ 方向)
+            [1,4], [2,5,8], [7,10,13], [11,14] // 其他短斜線 (/ 方向)
+        ],
+        triangle: [
+            [0], [1,2], [3,4,5], [6,7,8,9], [10,11,12,13,14], // 橫向層
+            [0,1,3,6,10], [2,4,7,11], [5,8,12], [9,13], [14], // 左斜線 (/)
+            [0,2,5,9,14], [1,4,8,13], [3,7,12], [6,11], [10]  // 右斜線 (\)
+        ]
+    };
+
+    function getPlayerName(index) { return players[index].isAI ? `AI [${players[index].id}]` : `玩家 [${players[index].id}]`; }
+
+    function startGame() {
+        currentMapType = document.getElementById('map-select').value;
+        maxTakeLimit = parseInt(document.getElementById('max-take').value);
+        winMode = document.getElementById('win-condition').value;
+        const hCount = parseInt(document.getElementById('human-count').value);
+        const aCount = parseInt(document.getElementById('ai-count').value);
+        
+        document.getElementById('rule-display').innerText = winMode === 'last-win' ? '目標：取走最後一顆者 獲勝' : '目標：取走最後一顆者 失敗 (Misere)';
+        document.getElementById('hint-box').classList.add('hidden');
+
+        players = [];
+        for(let i=0; i<hCount; i++) players.push({ id: `H${i+1}`, isAI: false });
+        for(let i=0; i<aCount; i++) players.push({ id: `A${i+1}`, isAI: true });
+
+        currentSelection = [];
+        currentPlayerIndex = 0;
+        isGameOver = false;
+        
+        buildBoard(currentMapType);
+        initSolverBitmasks(); // 預先計算所有合法位元遮罩，供演算法使用
+        
+        document.getElementById('setup-panel').classList.add('hidden');
+        document.getElementById('game-panel').classList.remove('hidden');
+        document.getElementById('controls').classList.remove('hidden');
+        
+        startTime = Date.now();
+        currentTurnTime = turnTimeLimit; 
+        clearInterval(timerInterval);
+        timerInterval = setInterval(updateTimer, 1000);
+        
+        updateTurnDisplay();
+        updateTimerDisplay();
+        checkAITurn(); 
+    }
+
+    // ----------------------------------------------------
+    // --- 演算法核心：將幾何線段轉換為二進位遮罩 (Bitmasks)
+    // ----------------------------------------------------
+    function initSolverBitmasks() {
+        solverMemo.clear();
+        validMoveMasks = [];
+        const lines = GEOMETRY_LINES[currentMapType];
+        
+        for (let line of lines) {
+            for (let i = 0; i < line.length; i++) {
+                let mask = 0;
+                for (let j = i; j < line.length && (j - i + 1) <= maxTakeLimit; j++) {
+                    mask |= (1 << line[j]);
+                    if (!validMoveMasks.includes(mask)) validMoveMasks.push(mask);
+                }
+            }
+        }
+    }
+
+    // Minimax 核心：遞迴尋找必勝步 (帶備忘錄優化)
+    function findBestMove(stateMask, isMisere) {
+        if (solverMemo.has(stateMask)) return solverMemo.get(stateMask);
+        
+        // 終止條件：盤面為空。
+        if (stateMask === 0) {
+            // 在正常規則，剛拿完最後一顆的人贏了，所以「輪到走的人」算輸 (false)。
+            // 在 Misere 規則，剛拿最後一顆的人輸了，所以「輪到走的人」算贏 (true)。
+            return { isWin: isMisere, bestMove: null };
+        }
+
+        let bestMove = null;
+        let isWin = false;
+        let possibleMoves = [];
+
+        for (let move of validMoveMasks) {
+            if ((stateMask & move) === move) { // 如果該線段的棋子都在盤面上
+                possibleMoves.push(move);
+                let nextState = stateMask & ~move; // 模擬拿取
+                
+                let result = findBestMove(nextState, isMisere);
+                
+                // 如果下一步會導致對手必敗 (!result.isWin)，這步就是我們的必勝步
+                if (!result.isWin) {
+                    isWin = true;
+                    bestMove = move;
+                    break; // Alpha-Beta 剪枝：找到一條活路就不用算了
+                }
+            }
+        }
+
+        // 如果算不出必勝步，隨便挑一個合法的走
+        if (!isWin && possibleMoves.length > 0) {
+            bestMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+        }
+
+        let res = { isWin, bestMove };
+        solverMemo.set(stateMask, res);
+        return res;
+    }
+
+    // ----------------------------------------------------
+    // --- 必勝引導與提示系統
+    // ----------------------------------------------------
+    function getStrategicHint() {
+        if(isGameOver || players[currentPlayerIndex].isAI) return;
+
+        // 清除舊提示
+        mapPieces.forEach(p => p.element.classList.remove('hint-highlight'));
+
+        // 將目前盤面轉為二進位狀態
+        let currentState = 0;
+        let remainingTotal = 0;
+        for(let i=0; i<mapPieces.length; i++) {
+            if(!mapPieces[i].taken) {
+                currentState |= (1 << mapPieces[i].id);
+                remainingTotal++;
+            }
+        }
+
+        let isMisere = (winMode === 'last-lose');
+        let result = findBestMove(currentState, isMisere);
+        
+        let hintBox = document.getElementById('hint-box');
+        let hintText = document.getElementById('hint-text');
+
+        if(result.bestMove !== null) {
+            // 高光顯示建議拿取的棋子
+            let takeCount = 0;
+            for(let i=0; i<mapPieces.length; i++) {
+                if((result.bestMove & (1 << i)) !== 0) {
+                    mapPieces[i].element.classList.add('hint-highlight');
+                    takeCount++;
+                }
+            }
+
+            // 依據指南給予解析
+            if(result.isWin) {
+                let leftPieces = remainingTotal - takeCount;
+                
+                if (isMisere) {
+                    hintText.innerHTML = "<strong>【毒酒逆推法】</strong><br>現在是 Misere 規則。這一步能完美破壞對手的盤算，將盤面重構成必定會留下最後一顆讓對手踩雷的死亡陷阱！";
+                } else if (leftPieces > 0 && leftPieces % (maxTakeLimit + 1) === 0 && currentMapType === 'line') {
+                    hintText.innerHTML = `<strong>【階段二：終局逆推法與目標常數 $K$】</strong><br>太棒了！目標常數 $K = ${maxTakeLimit + 1}$。這步將剩下剛好 ${leftPieces} 顆。接下來對手拿 $N$ 顆，你只要跟著拿 $(K-N)$ 顆，就能保證拿到最後一顆！`;
+                } else if (currentMapType === 'grid' && leftPieces % 2 === 0) {
+                    hintText.innerHTML = "<strong>【階段三：尋找對稱與鏡像】</strong><br>這步極度霸道！它能把盤面切割成完美的獨立對稱區塊。只要對手接下來怎麼拿，你在對稱位置模仿拿一樣的數量，就能鎖定勝局。";
+                } else {
+                    hintText.innerHTML = "<strong>【階段四：打破對稱與同餘破壞】</strong><br>當幾何對稱無效時，這是經過同餘運算(Nim-Sum)後的最佳解答。這步能破壞連線，迫使對手走入無法解開的數學死局。";
+                }
+            } else {
+                hintText.innerHTML = "<strong>【階段一/四：打破常規的危機】</strong><br>糟糕！目前盤面的「對稱性」或「目標常數」已被對手掌控，我們處於絕對劣勢，沒有必勝公式。建議依照提示拿取最少影響盤面的棋子，祈禱對手下一步計算失誤！";
+            }
+        }
+        hintBox.classList.remove('hidden');
+    }
+
+    // ----------------------------------------------------
+    // --- 原有遊戲邏輯
+    // ----------------------------------------------------
+    function updateTimer() {
+        if(isGameOver) return;
+        if (!players[currentPlayerIndex].isAI) {
+            currentTurnTime--;
+            if (currentTurnTime <= 0) {
+                forceRandomMove(); 
+                return;
+            }
+        }
+        updateTimerDisplay();
+    }
+
+    function updateTimerDisplay() {
+        if (isGameOver) return;
+        const diff = Math.floor((Date.now() - startTime) / 1000);
+        const m = String(Math.floor(diff / 60)).padStart(2, '0');
+        const s = String(diff % 60).padStart(2, '0');
+        const timerEl = document.getElementById('timer-display');
+        const turnStr = players[currentPlayerIndex].isAI ? "AI 運算中" : `${currentTurnTime}s`;
+        
+        timerEl.innerText = `總時: ${m}:${s} | 倒數: ${turnStr}`;
+        if (!players[currentPlayerIndex].isAI && currentTurnTime <= 3) timerEl.classList.add('warning');
+        else timerEl.classList.remove('warning');
+    }
+
+    function buildBoard(type) {
+        const board = document.getElementById('game-board');
+        board.innerHTML = '';
+        board.className = (type === 'grid') ? 'board-grid' : (type === 'triangle' ? 'board-triangle' : '');
+        mapPieces = [];
+        
+        let total = (type === 'line') ? 12 : (type === 'grid' ? 16 : 15);
+        if (type === 'triangle') {
+            let idCounter = 0;
+            for(let row=1; row<=5; row++) {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'tri-row';
+                for(let col=0; col<row; col++) rowDiv.appendChild(createPiece(idCounter++));
+                board.appendChild(rowDiv);
+            }
+        } else {
+            for(let i=0; i<total; i++) board.appendChild(createPiece(i));
+        }
+    }
+
+    function createPiece(id) {
+        const p = document.createElement('div');
+        p.className = 'piece';
+        p.innerText = (id < 9 ? '0' : '') + (id + 1);
+        p.onclick = () => toggleSelect(id, p);
+        mapPieces.push({ id: id, element: p, taken: false });
+        return p;
+    }
+
+    function togglePieceIDs() { mapPieces.forEach(p => p.element.classList.toggle('show-id')); }
+
+    function toggleSelect(id, element) {
+        if (isGameOver || players[currentPlayerIndex].isAI || mapPieces[id].taken) return;
+        document.getElementById('hint-box').classList.add('hidden'); // 操作時隱藏提示
+        mapPieces.forEach(p => p.element.classList.remove('hint-highlight'));
+
+        const selIdx = currentSelection.indexOf(id);
+        if (selIdx > -1) {
+            currentSelection.splice(selIdx, 1);
+            element.classList.remove('selected');
+        } else {
+            if (currentSelection.length >= maxTakeLimit) return alert(`單次最多只能拿取 ${maxTakeLimit} 顆！`);
+            currentSelection.push(id);
+            element.classList.add('selected');
+        }
+    }
+
+    function validateGeometry(selectedIds) {
+        if (selectedIds.length === 1) return true;
+        const validLines = GEOMETRY_LINES[currentMapType];
+        
+        for (let line of validLines) {
+            const allInLine = selectedIds.every(id => line.includes(id));
+            if (allInLine) {
+                let indices = selectedIds.map(id => line.indexOf(id)).sort((a,b)=>a-b);
+                let isContiguous = true;
+                for(let i=0; i<indices.length-1; i++) {
+                    if (indices[i+1] - indices[i] !== 1) { isContiguous = false; break; }
+                }
+                if (isContiguous) return true;
+            }
+        }
+        return false;
+    }
+
+    function checkAITurn() {
+        if (isGameOver) return;
+        if (players[currentPlayerIndex].isAI) {
+            document.getElementById('confirm-btn').disabled = true; 
+            
+            setTimeout(() => {
+                // 升級：AI 直接使用 Minimax 演算法尋找必勝步！
+                let currentState = 0;
+                for(let i=0; i<mapPieces.length; i++) {
+                    if(!mapPieces[i].taken) currentState |= (1 << mapPieces[i].id);
+                }
+                let isMisere = (winMode === 'last-lose');
+                let result = findBestMove(currentState, isMisere);
+                
+                let selectedIds = [];
+                if (result.bestMove !== null) {
+                    for(let i=0; i<mapPieces.length; i++) {
+                        if((result.bestMove & (1 << i)) !== 0) selectedIds.push(i);
+                    }
+                }
+                
+                if(selectedIds.length > 0) executeMove(selectedIds);
+                else forceRandomMove(); // 備用防呆
+
+                if (!isGameOver) document.getElementById('confirm-btn').disabled = false;
+            }, 1200); 
+        }
+    }
+
+    function forceRandomMove() {
+        if (isGameOver) return;
+        let currentState = 0;
+        for(let i=0; i<mapPieces.length; i++) if(!mapPieces[i].taken) currentState |= (1 << mapPieces[i].id);
+        
+        let possibleMoves = validMoveMasks.filter(m => (currentState & m) === m);
+        if (possibleMoves.length > 0) {
+            let randomMask = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+            let selectedIds = [];
+            for(let i=0; i<mapPieces.length; i++) if((randomMask & (1 << i)) !== 0) selectedIds.push(i);
+            executeMove(selectedIds); 
+        }
+    }
+
+    function confirmMove() {
+        if (currentSelection.length === 0) return alert("未選擇任何目標");
+        if (!validateGeometry(currentSelection)) {
+            currentSelection.forEach(id => mapPieces[id].element.classList.remove('selected'));
+            currentSelection = [];
+            return alert("無效的佈局！選取的棋子必須在「同一條直線上」且「相鄰」。");
+        }
+        executeMove(currentSelection);
+    }
+
+    function executeMove(selectedIds) {
+        document.getElementById('hint-box').classList.add('hidden');
+        mapPieces.forEach(p => p.element.classList.remove('hint-highlight'));
+
+        selectedIds.forEach(id => {
+            mapPieces[id].taken = true;
+            mapPieces[id].element.classList.remove('selected');
+            mapPieces[id].element.classList.add('taken');
+        });
+        currentSelection = [];
+        
+        if (checkWinCondition()) return;
+        
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.length;
+        currentTurnTime = turnTimeLimit; 
+        
+        updateTurnDisplay();
+        updateTimerDisplay(); 
+        checkAITurn();
+    }
+
+    function checkWinCondition() {
+        const remaining = mapPieces.filter(p => !p.taken).length;
+        if (remaining === 0) {
+            isGameOver = true;
+            clearInterval(timerInterval);
+            
+            const winnerName = getPlayerName(currentPlayerIndex);
+            let resultText = winMode === 'last-win' 
+                ? `戰局結束！${winnerName} 奪得最後目標，獲得勝利！`
+                : `戰局結束！${winnerName} 被迫取走最後一子，遭到淘汰！`;
+            
+            document.getElementById('turn-indicator').innerText = resultText;
+            document.getElementById('timer-display').classList.remove('warning');
+            document.getElementById('controls').classList.add('hidden');
+            return true;
+        }
+        return false;
+    }
+
+    function updateTurnDisplay() {
+        if(!isGameOver) document.getElementById('turn-indicator').innerText = `目前回合：${getPlayerName(currentPlayerIndex)} 行動中...`;
+    }
+
+    function fullReset() {
+        clearInterval(timerInterval);
+        document.getElementById('setup-panel').classList.remove('hidden');
+        document.getElementById('game-panel').classList.add('hidden');
+    }
+</script>
+</body>
+</html>

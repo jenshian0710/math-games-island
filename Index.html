@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>數學島｜3D 挑戰地圖</title>
+  <style>
+    :root { --ink:#102f45; --ocean-1:#092c52; --ocean-2:#0d6e97; --gold:#ffd76c; --paper:#fffdf0; --shadow:rgba(0,18,38,.42); }
+    * { box-sizing:border-box; }
+    html { background:var(--ocean-1); }
+    body { min-width:320px; min-height:100vh; margin:0; overflow-x:hidden; color:#f6fbff; font-family:"Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif; background:radial-gradient(ellipse at 50% -24%,#348eb3 0%,transparent 49%),radial-gradient(circle at 15% 55%,rgba(102,220,231,.16) 0 1px,transparent 2px) 0 0 / 20px 20px,linear-gradient(154deg,#0b3158,#0c658b 58%,#07345e); }
+    .page { width:min(1320px,calc(100% - 28px)); margin:0 auto; padding:clamp(18px,3vw,36px) 0 38px; }
+    .hero { display:flex; align-items:end; justify-content:space-between; gap:18px; margin:0 auto 18px; }
+    .eyebrow { margin:0 0 5px; color:#93eff3; font-size:.8rem; font-weight:800; letter-spacing:.18em; }
+    h1 { margin:0; font-size:clamp(2rem,5vw,3.45rem); letter-spacing:.055em; line-height:1.08; text-shadow:0 3px 0 rgba(0,0,0,.2); }
+    .intro { max-width:670px; margin:10px 0 0; color:#d3edf5; font-weight:600; line-height:1.6; }
+    .view-button { flex:0 0 auto; border:1px solid rgba(211,250,255,.6); border-radius:999px; padding:11px 15px; color:#f5ffff; background:rgba(9,48,78,.72); box-shadow:0 7px 17px rgba(0,0,0,.2); font:inherit; font-weight:800; cursor:pointer; }
+    .view-button:hover,.view-button:focus-visible { background:#117fa4; outline:3px solid rgba(255,255,255,.9); outline-offset:3px; }
+    .map-shell { position:relative; min-height:min(790px,calc(100vh - 180px)); padding:clamp(12px,2.5vw,28px); overflow:hidden; border:1px solid rgba(164,237,244,.55); border-radius:34px; background:radial-gradient(ellipse at 50% 43%,#2785a7 0%,#0b4c75 62%,#082b50 100%); box-shadow:0 24px 55px var(--shadow),inset 0 0 60px rgba(127,238,239,.14); perspective:1400px; }
+    .map-shell::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.42; background:repeating-radial-gradient(ellipse at 50% 50%,transparent 0 20px,rgba(130,242,248,.18) 21px 22px,transparent 23px 43px); }
+    .world-layer { position:relative; z-index:1; width:100%; min-height:700px; aspect-ratio:16 / 9.25; transform-style:preserve-3d; transform-origin:50% 57%; transition:transform .72s cubic-bezier(.2,.8,.2,1),filter .72s ease; }
+    .is-angled .world-layer { transform:rotateX(12deg) rotateZ(-.7deg) translateY(-3px); filter:drop-shadow(0 28px 14px rgba(0,17,37,.4)); }
+    .terrain { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+    .terrain text { font-family:"Microsoft JhengHei","Noto Sans TC",sans-serif; }
+    .region-label { fill:#10364a; font-size:18px; font-weight:900; letter-spacing:4px; paint-order:stroke; stroke:rgba(255,255,237,.64); stroke-width:4px; stroke-linejoin:round; }
+    .region-subtitle { fill:#315a62; font-size:12px; font-weight:700; letter-spacing:1.5px; paint-order:stroke; stroke:rgba(255,255,237,.6); stroke-width:3px; }
+    .challenge-nav { position:absolute; inset:0; z-index:2; transform-style:preserve-3d; }
+    .challenge { --accent:#ffe278; position:absolute; display:grid; grid-template-columns:29px minmax(110px,1fr); align-items:center; gap:8px; width:min(210px,20%); padding:7px 9px 7px 7px; color:#173345; text-decoration:none; background:rgba(255,254,239,.94); border:2px solid rgba(255,255,255,.94); border-radius:13px; box-shadow:0 7px 0 rgba(11,55,71,.38),0 12px 18px rgba(0,27,42,.24); transform:translate(-50%,-50%) translateZ(28px); transition:transform .18s ease,box-shadow .18s ease,background .18s ease; isolation:isolate; }
+    .challenge::before { content:""; position:absolute; z-index:-1; left:14px; bottom:-20px; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-top:20px solid rgba(255,254,239,.94); }
+    .challenge:hover,.challenge:focus-visible { background:#fff; transform:translate(-50%,calc(-50% - 10px)) translateZ(48px) scale(1.035); box-shadow:0 13px 0 rgba(11,55,71,.35),0 20px 26px rgba(0,27,42,.3); outline:none; }
+    .challenge:focus-visible { outline:4px solid var(--accent); outline-offset:3px; }
+    .pin { display:grid; place-items:center; width:29px; height:29px; border-radius:50% 50% 50% 0; background:var(--accent); color:#23425a; font-size:1rem; transform:rotate(-45deg); box-shadow:0 2px 0 rgba(83,54,18,.28); }
+    .pin span { transform:rotate(45deg); }
+    .challenge b { display:block; font-size:clamp(.78rem,1.4vw,.98rem); line-height:1.2; }
+    .challenge small { display:block; margin-top:2px; color:#537180; font-size:.7rem; font-weight:700; line-height:1.25; }
+    .mountain { --accent:#d9edff; }.jungle { --accent:#b9e875; }.desert { --accent:#ffe08a; }.lake { --accent:#9be9fb; }
+    .cube { left:28%; top:19%; }.square { left:46%; top:13%; }.tower { left:64%; top:24%; }.sheep { left:79%; top:45%; }.memory { left:72%; top:63%; }.number-link { left:56%; top:59%; }.pento { left:42%; top:79%; }.naval { left:62%; top:82%; }.bubble { left:21%; top:63%; }.boat { left:24%; top:42%; }
+    .legend { display:flex; flex-wrap:wrap; justify-content:center; gap:8px 15px; margin:17px 0 0; color:#d4eef4; font-size:.85rem; font-weight:700; }.legend span::before { content:""; display:inline-block; width:9px; height:9px; margin-right:5px; border-radius:50%; background:currentColor; }.legend .mountain-key { color:#d9edff; }.legend .jungle-key { color:#b9e875; }.legend .desert-key { color:#ffe08a; }.legend .lake-key { color:#9be9fb; }
+    .assist { position:absolute; left:18px; bottom:14px; z-index:4; margin:0; padding:7px 10px; border-radius:9px; color:rgba(238,255,255,.88); background:rgba(5,46,74,.67); font-size:.75rem; font-weight:700; }
+    @media (max-width:840px) { .hero { align-items:start; flex-direction:column; }.view-button { align-self:flex-start; }.map-shell { min-height:0; }.world-layer { min-height:640px; aspect-ratio:auto; }.challenge { width:min(183px,26%); }.challenge small { display:none; }.cube { left:22%; top:16%; }.square { left:48%; top:10%; }.tower { left:74%; top:19%; }.boat { left:16%; top:42%; }.bubble { left:19%; top:65%; }.number-link { left:55%; top:57%; }.sheep { left:82%; top:42%; }.memory { left:75%; top:63%; }.pento { left:38%; top:82%; }.naval { left:64%; top:85%; } }
+    @media (max-width:560px) { .page { width:min(100% - 18px,1320px); }.map-shell { border-radius:23px; padding:9px; }.world-layer { min-height:758px; }.is-angled .world-layer { transform:none; }.region-label { font-size:14px; }.region-subtitle { font-size:10px; }.challenge { grid-template-columns:25px minmax(0,1fr); width:min(144px,35%); min-height:48px; padding:6px; gap:6px; border-radius:10px; }.pin { width:25px; height:25px; font-size:.85rem; }.challenge b { font-size:.73rem; }.challenge::before { left:10px; }.cube { left:21%; top:16%; }.square { left:49%; top:9%; }.tower { left:78%; top:19%; }.boat { left:16%; top:42%; }.bubble { left:18%; top:64%; }.number-link { left:53%; top:59%; }.sheep { left:80%; top:43%; }.memory { left:75%; top:65%; }.pento { left:36%; top:83%; }.naval { left:68%; top:85%; }.assist { display:none; } }
+    @media (prefers-reduced-motion:reduce) { .world-layer,.challenge { transition:none; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div><p class="eyebrow">MATH ISLAND ADVENTURE</p><h1>數學島・3D 挑戰地圖</h1><p class="intro">穿越雪峰、叢林、黃金沙地與碧藍湖泊；每一個地標都是一款可以立刻開始的腦力挑戰。</p></div>
+      <button class="view-button" id="view-toggle" type="button" aria-pressed="true">⤢ 切換為正視地圖</button>
+    </header>
+    <section class="map-shell is-angled" id="map-shell" aria-label="數學島遊戲挑戰地圖">
+      <div class="world-layer">
+        <svg class="terrain" viewBox="0 0 1200 760" role="img" aria-labelledby="island-title island-desc">
+          <title id="island-title">數學島的四種地貌</title><desc id="island-desc">一座由雪山、叢林、沙地與湖泊組成的立體感島嶼，各區域分布十款數學與策略遊戲。</desc>
+          <defs>
+            <linearGradient id="land" x1=".15" y1="0" x2=".9" y2="1"><stop stop-color="#d4ed9a"/><stop offset=".48" stop-color="#7dbb64"/><stop offset="1" stop-color="#397a54"/></linearGradient><linearGradient id="mountain" x1=".2" y1="0" x2=".8" y2="1"><stop stop-color="#f7fbff"/><stop offset=".27" stop-color="#a3cbe0"/><stop offset=".63" stop-color="#456f8d"/><stop offset="1" stop-color="#203f5b"/></linearGradient><linearGradient id="sand" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff2b2"/><stop offset=".5" stop-color="#edbc61"/><stop offset="1" stop-color="#bf7b37"/></linearGradient><radialGradient id="lake" cx="40%" cy="25%" r="78%"><stop stop-color="#ccfbff"/><stop offset=".47" stop-color="#4ad0df"/><stop offset="1" stop-color="#087aa7"/></radialGradient>
+            <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="13" stdDeviation="10" flood-color="#0b3950" flood-opacity=".45"/></filter><filter id="texture"><feTurbulence type="fractalNoise" baseFrequency=".017" numOctaves="3" seed="17" result="noise"/><feColorMatrix in="noise" type="saturate" values="0" result="mono"/><feBlend in="SourceGraphic" in2="mono" mode="soft-light"/></filter>
+            <path id="island-shape" d="M130 278 C128 173 232 100 372 117 C466 56 615 89 698 124 C823 83 1015 146 1060 273 C1126 353 1083 509 992 568 C905 688 720 685 611 638 C473 700 292 656 218 558 C119 518 81 376 130 278 Z"/><g id="tree"><path d="M0 21 L11 0 L22 21 Z" fill="#226c45"/><path d="M3 15 L11 0 L19 15 Z" fill="#3e9854"/><rect x="9" y="19" width="4" height="8" rx="1" fill="#805733"/></g>
+          </defs>
+          <ellipse cx="600" cy="659" rx="510" ry="69" fill="rgba(0,42,69,.55)"/>
+          <g filter="url(#soft-shadow)"><use href="#island-shape" fill="url(#land)" stroke="#c6e495" stroke-width="12"/><use href="#island-shape" fill="transparent" filter="url(#texture)" opacity=".35"/></g>
+          <path d="M127 294 C146 212 260 142 389 137 C360 202 419 264 392 329 C351 402 243 438 174 404 C126 380 105 337 127 294Z" fill="#d2e7b8" opacity=".85"/><path d="M161 351 C162 263 238 193 340 186 C280 249 281 326 319 399 C279 434 206 449 164 415 Z" fill="url(#lake)" stroke="#b9fbfa" stroke-width="5"/><path d="M173 369 C219 350 264 368 302 345 M182 394 C219 377 256 392 290 373 M201 415 C229 400 260 411 278 398" fill="none" stroke="#e2ffff" stroke-width="3" opacity=".7"/>
+          <path d="M274 180 L362 56 L440 185 Z" fill="url(#mountain)"/><path d="M374 200 L487 85 L584 219 Z" fill="url(#mountain)"/><path d="M468 215 L586 112 L696 239 Z" fill="url(#mountain)"/><path d="M336 91 L362 56 L389 97 L376 91 L361 110 L349 89 Z M458 115 L487 85 L514 125 L497 116 L483 136 L474 114 Z M558 143 L586 112 L616 147 L599 138 L583 159 L574 137 Z" fill="#fff" opacity=".92"/>
+          <path d="M674 266 C717 177 838 146 944 207 C1053 271 1040 392 970 439 C914 474 794 457 731 414 C675 374 655 313 674 266Z" fill="#4e9952"/><g opacity=".98"><use href="#tree" x="730" y="236"/><use href="#tree" x="762" y="203"/><use href="#tree" x="800" y="230"/><use href="#tree" x="837" y="195"/><use href="#tree" x="877" y="224"/><use href="#tree" x="920" y="248"/><use href="#tree" x="955" y="283"/><use href="#tree" x="735" y="301"/><use href="#tree" x="779" y="329"/><use href="#tree" x="824" y="277"/><use href="#tree" x="860" y="314"/><use href="#tree" x="900" y="343"/><use href="#tree" x="947" y="358"/><use href="#tree" x="771" y="383"/><use href="#tree" x="823" y="397"/></g>
+          <path d="M415 475 C468 424 599 424 704 471 C805 516 857 604 797 644 C715 698 523 680 424 623 C369 590 368 516 415 475Z" fill="url(#sand)"/><path d="M438 531 C502 493 585 498 660 520 M429 563 C505 528 641 541 742 580 M459 600 C541 575 653 593 723 616" fill="none" stroke="#ffedaa" stroke-width="11" opacity=".48" stroke-linecap="round"/>
+          <path d="M557 278 C611 299 644 339 656 395 C665 439 657 453 628 475" fill="none" stroke="#efd987" stroke-width="14" opacity=".85" stroke-linecap="round"/><path d="M557 278 C611 299 644 339 656 395 C665 439 657 453 628 475" fill="none" stroke="#a97339" stroke-width="2" stroke-dasharray="5 8" opacity=".9"/><path d="M325 408 C414 428 458 452 515 486 M628 475 C688 451 744 438 797 420 M628 475 C647 533 661 586 680 635" fill="none" stroke="#d7c278" stroke-width="10" opacity=".76" stroke-linecap="round"/><path d="M325 408 C414 428 458 452 515 486 M628 475 C688 451 744 438 797 420 M628 475 C647 533 661 586 680 635" fill="none" stroke="#a8733d" stroke-width="2" stroke-dasharray="5 8" opacity=".85"/>
+          <g transform="translate(579 449)"><circle r="38" fill="#f4dc87" stroke="#9c7538" stroke-width="4"/><path d="M-19 0H19M0-19V19" stroke="#986e33" stroke-width="5" stroke-linecap="round"/><circle r="7" fill="#fff4bd"/></g>
+          <text class="region-label" x="440" y="180">證明雪峰</text><text class="region-subtitle" x="463" y="202">NUMERICAL SUMMIT</text><text class="region-label" x="742" y="176">數字叢林</text><text class="region-subtitle" x="769" y="198">NUMBER JUNGLE</text><text class="region-label" x="502" y="685">對稱沙海</text><text class="region-subtitle" x="535" y="706">SYMMETRY DUNES</text><text class="region-label" x="134" y="488">連鎖碧湖</text><text class="region-subtitle" x="155" y="510">CHAIN LAKE</text>
+        </svg>
+        <nav class="challenge-nav" aria-label="選擇一款遊戲挑戰">
+          <a class="challenge mountain cube" href="立體骰子數學解謎生成器.html" aria-label="前往立體骰子數學解謎生成器"><span class="pin"><span>🎲</span></span><span><b>立體骰子解謎</b><small>雪峰骰子神殿</small></span></a>
+          <a class="challenge mountain square" href="旋風魔方陣V_6.html" aria-label="前往旋風魔方陣"><span class="pin"><span>🌀</span></span><span><b>旋風魔方陣</b><small>目標總和峰頂</small></span></a>
+          <a class="challenge mountain tower" href="摩天大樓_差異計分版.html" aria-label="前往摩天大樓建造挑戰"><span class="pin"><span>🏙️</span></span><span><b>摩天大樓</b><small>雲端視野高地</small></span></a>
+          <a class="challenge jungle sheep" href="綿羊比大小0819.html" aria-label="前往綿羊比大小"><span class="pin"><span>🐑</span></span><span><b>綿羊比大小</b><small>排序牧場</small></span></a>
+          <a class="challenge jungle memory" href="記憶牧羊人_基進版.html" aria-label="前往記憶牧羊人"><span class="pin"><span>🧠</span></span><span><b>記憶牧羊人</b><small>記憶林間小徑</small></span></a>
+          <a class="challenge jungle number-link" href="數連.html" aria-label="前往數連"><span class="pin"><span>🔗</span></span><span><b>數連</b><small>交錯藤蔓迷宮</small></span></a>
+          <a class="challenge desert pento" href="五連方對稱拼圖_FINALII.html" aria-label="前往五連方對稱拼圖"><span class="pin"><span>🧩</span></span><span><b>五連方對稱拼圖</b><small>古代幾何遺跡</small></span></a>
+          <a class="challenge desert naval" href="怒海棋兵暖身活動_背景調整提示版.html" aria-label="前往怒海棋兵暖身活動"><span class="pin"><span>⚔️</span></span><span><b>怒海棋兵</b><small>戰略沙洲</small></span></a>
+          <a class="challenge lake bubble" href="魔法氣泡完整探索.html" aria-label="前往魔法氣泡連鎖探索"><span class="pin"><span>🫧</span></span><span><b>魔法氣泡連鎖</b><small>泡泡瀑布</small></span></a>
+          <a class="challenge lake boat" href="快艇骰子pk.html" aria-label="前往快艇骰子 PK"><span class="pin"><span>🚤</span></span><span><b>快艇骰子 PK</b><small>碧湖碼頭</small></span></a>
+        </nav>
+      </div>
+      <p class="assist" id="map-help">點選地標即可開始挑戰</p>
+    </section>
+    <p class="legend" aria-label="地貌圖例"><span class="mountain-key">雪峰：數理邏輯</span><span class="jungle-key">叢林：排序與路徑</span><span class="desert-key">沙海：空間與策略</span><span class="lake-key">湖泊：連鎖與競技</span></p>
+  </main>
+  <script>
+    const shell = document.getElementById('map-shell');
+    const toggle = document.getElementById('view-toggle');
+    const help = document.getElementById('map-help');
+    toggle.addEventListener('click', () => {
+      const angled = shell.classList.toggle('is-angled');
+      toggle.setAttribute('aria-pressed', String(angled));
+      toggle.textContent = angled ? '⤢ 切換為正視地圖' : '◫ 切換為立體視角';
+      help.textContent = angled ? '立體視角已開啟・點選地標即可挑戰' : '正視地圖已開啟・點選地標即可挑戰';
+    });
+  </script>
+</body>
+</html>

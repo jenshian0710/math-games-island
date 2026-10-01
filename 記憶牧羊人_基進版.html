@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記憶牧羊人</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #8BC34A; /* 草地綠 */
+            background-image: radial-gradient(#9CCC65 15%, transparent 16%), radial-gradient(#9CCC65 15%, transparent 16%);
+            background-size: 30px 30px;
+            background-position: 0 0, 15px 15px;
+            touch-action: manipulation;
+        }
+
+        /* 卡片容器 */
+        .card-container {
+            perspective: 1000px;
+            width: 70px;
+            height: 100px;
+            margin: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0.2, 0.2, 1);
+            position: relative;
+        }
+
+        @media (min-width: 768px) {
+            .card-container {
+                width: 90px;
+                height: 130px;
+            }
+        }
+
+        /* 已收集狀態：縮小並透明，但保留位置佔位 */
+        .card-container.collected {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.5);
+        }
+
+        /* 成功連線中的狀態：浮起發光 */
+        .card-container.sequence {
+            transform: translateY(-15px) scale(1.05);
+            z-index: 20;
+            box-shadow: 0 15px 25px rgba(76, 175, 80, 0.6);
+            border-radius: 8px;
+        }
+
+        /* 上次失敗遺留的起點狀態：橘色呼吸燈 */
+        .card-container.error-start {
+            box-shadow: 0 0 20px rgba(255, 152, 0, 0.8);
+            border-radius: 8px;
+            animation: pulse-orange 2s infinite;
+            z-index: 10;
+        }
+
+        /* 剛翻錯的狀態：紅色震動 */
+        .card-container.wrong-pick {
+            border: 4px solid #EF4444;
+            border-radius: 8px;
+            box-shadow: 0 0 25px rgba(239, 68, 68, 1);
+            animation: shake 0.4s ease-in-out;
+            z-index: 30;
+        }
+
+        @keyframes pulse-orange {
+            0% { box-shadow: 0 0 10px rgba(255, 152, 0, 0.4); }
+            50% { box-shadow: 0 0 25px rgba(255, 152, 0, 1); }
+            100% { box-shadow: 0 0 10px rgba(255, 152, 0, 0.4); }
+        }
+
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); }
+        }
+
+        /* 3D 翻轉主體 */
+        .card {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transition: transform 0.6s cubic-bezier(0.4, 0.2, 0.2, 1);
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+
+        /* 翻開狀態 */
+        .card.revealed {
+            transform: rotateY(180deg);
+        }
+
+        /* 正背面共通設定 */
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            border: 3px solid white;
+            overflow: hidden;
+        }
+
+        /* 背面 (提示) */
+        .card-back { background-color: #81D4FA; }
+        .card-back::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 40%;
+            background-color: #7CB342;
+            z-index: 0;
+        }
+
+        /* 正面 (數字) */
+        .card-front {
+            background-color: #E1F5FE;
+            transform: rotateY(180deg);
+        }
+        .card-front::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 40%;
+            background-color: #7CB342;
+            z-index: 0;
+        }
+
+        /* 木牌設計 */
+        .wood-sign {
+            background-color: #8D6E63;
+            border: 2px solid #5D4037;
+            border-radius: 4px;
+            color: white;
+            font-weight: 900;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+            z-index: 1;
+        }
+
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.6); }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <!-- 模式選擇畫面 (Splash Screen) -->
+    <div id="splash-screen" class="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex flex-col justify-center items-center px-4">
+        <h1 class="text-5xl md:text-7xl font-black text-yellow-400 mb-8 drop-shadow-[0_0_15px_rgba(250,204,21,0.5)] text-center tracking-widest">記憶牧羊人</h1>
+        <div class="flex flex-col md:flex-row gap-6 max-w-2xl w-full">
+            <button onclick="selectMode('basic')" class="flex-1 bg-green-500 hover:bg-green-600 border-4 border-green-300 text-white rounded-3xl p-6 md:p-8 shadow-2xl transition transform hover:scale-105 group relative overflow-hidden">
+                <div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                <h2 class="text-3xl md:text-4xl font-black mb-3 drop-shadow-md">🔰 基礎版</h2>
+                <div class="text-left bg-black bg-opacity-20 p-4 rounded-xl font-bold space-y-2">
+                    <p>🐑 牌數固定：<span class="text-yellow-300">18 張</span> (2~19)</p>
+                    <p>⏱️ 思考限時：<span class="text-yellow-300">15 秒</span></p>
+                    <p class="text-sm font-normal mt-2 opacity-90 border-t border-white border-opacity-30 pt-2">適合新手熟悉連續判定與記憶機制，輕鬆體驗樂趣。</p>
+                </div>
+            </button>
+            <button onclick="selectMode('standard')" class="flex-1 bg-blue-500 hover:bg-blue-600 border-4 border-blue-300 text-white rounded-3xl p-6 md:p-8 shadow-2xl transition transform hover:scale-105 group relative overflow-hidden">
+                <div class="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity"></div>
+                <h2 class="text-3xl md:text-4xl font-black mb-3 drop-shadow-md">⚙️ 標準版</h2>
+                <div class="text-left bg-black bg-opacity-20 p-4 rounded-xl font-bold space-y-2">
+                    <p>🐑 牌數自訂：<span class="text-yellow-300">12 ~ 37 張</span></p>
+                    <p>⏱️ 限時自訂：<span class="text-yellow-300">自由設定</span></p>
+                    <p class="text-sm font-normal mt-2 opacity-90 border-t border-white border-opacity-30 pt-2">適合進階玩家挑戰大牌陣、極限思考與腦力激盪。</p>
+                </div>
+            </button>
+        </div>
+    </div>
+
+    <!-- 頂部列 -->
+    <header class="bg-gray-900 bg-opacity-90 text-white p-3 shadow-md flex justify-between items-center z-20 shrink-0">
+        <div class="flex items-center gap-3 md:gap-6">
+            <h1 class="text-lg md:text-2xl font-black text-yellow-400 tracking-wider">記憶牧羊人</h1>
+            
+            <!-- 設定面板 -->
+            <div id="setup-panel" class="flex items-center gap-2 text-xs md:text-sm flex-wrap">
+                <label>人類：</label>
+                <select id="human-count" class="text-black rounded px-1 py-1 font-bold">
+                    <option value="1" selected>1 人</option>
+                    <option value="2">2 人</option>
+                    <option value="3">3 人</option>
+                </select>
+                
+                <label class="ml-1 md:ml-2">電腦：</label>
+                <select id="ai-count" class="text-black rounded px-1 py-1 font-bold">
+                    <option value="0">0 機</option>
+                    <option value="1">1 機</option>
+                    <option value="2">2 機</option>
+                    <option value="3" selected>3 機</option>
+                </select>
+
+                <!-- 只有標準版才會顯示的進階設定 -->
+                <div id="advanced-settings" class="flex items-center gap-1 md:gap-2 flex-wrap">
+                    <label class="ml-1 md:ml-2">牌數：</label>
+                    <input type="number" id="card-count" min="12" max="37" value="37" class="text-black rounded px-1 py-1 w-12 md:w-16 font-bold text-center">
+                    
+                    <label class="ml-1 md:ml-2">限時：</label>
+                    <select id="time-limit" class="text-black rounded px-1 py-1 font-bold">
+                        <option value="5">5 秒</option>
+                        <option value="10" selected>10 秒</option>
+                        <option value="15">15 秒</option>
+                        <option value="30">30 秒</option>
+                        <option value="0">無限制</option>
+                    </select>
+                </div>
+
+                <!-- 模式提示標籤 (基礎版顯示) -->
+                <span id="basic-mode-badge" class="hidden ml-2 bg-green-600 text-white font-bold px-2 py-0.5 rounded text-xs shadow-inner">🔰 基礎版 (18張 / 15秒)</span>
+
+                <button onclick="startGame()" class="bg-green-500 hover:bg-green-600 px-4 py-1 rounded-full font-black transition ml-2 md:ml-4 shadow-lg border-2 border-white">開始</button>
+            </div>
+
+            <!-- 狀態面板 (遊戲開始後顯示) -->
+            <div id="status-panel" class="hidden flex items-center gap-4">
+                <div class="flex flex-col md:flex-row gap-1 md:gap-4 items-start md:items-center">
+                    <span class="text-xs text-gray-300">剩餘牌數：<span id="remaining-count" class="text-white font-bold text-base">0</span></span>
+                    <span class="text-xs text-yellow-300 font-bold bg-gray-800 px-2 py-0.5 rounded shadow-inner">數字範圍：<span id="min-number-hint">2</span> ~ <span id="max-number-hint">38</span></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 倒數計時器與提示 -->
+        <div class="flex items-center gap-3">
+            <div id="timer-display" class="hidden flex items-center gap-1 md:gap-2 bg-gray-800 px-3 py-1 rounded-full border border-gray-600 transition-colors duration-300">
+                <span class="text-xs text-gray-300 hidden md:inline">⏱️ 秒數</span>
+                <span id="time-left" class="text-yellow-400 font-black text-lg w-6 text-center">--</span>
+            </div>
+            <div id="turn-indicator" class="hidden text-sm md:text-lg font-bold px-4 py-1 rounded-full bg-blue-500 animate-pulse transition-all shadow-md max-w-[150px] md:max-w-none truncate md:overflow-visible">
+                等待開始...
+            </div>
+        </div>
+    </header>
+
+    <!-- 中央桌面區域 (牌陣) -->
+    <main class="flex-grow overflow-y-auto relative p-2 md:p-4 flex flex-col items-center">
+        <div class="w-full max-w-6xl pb-8 mt-2 md:mt-4">
+            <div id="table-cards" class="flex flex-wrap justify-center items-center gap-2 md:gap-3 px-2">
+                <!-- JS 動態生成桌面的牌 -->
+            </div>
+        </div>
+    </main>
+
+    <!-- 玩家計分區 (下方) -->
+    <footer class="bg-gray-800 bg-opacity-95 p-3 shadow-[0_-10px_20px_rgba(0,0,0,0.3)] relative z-20 min-h-[140px] shrink-0">
+        <div class="text-white text-xs font-bold mb-2 text-center border-b border-gray-600 pb-1 flex flex-col md:flex-row justify-center gap-1 md:gap-4">
+            <span>玩家得分與已收集卡牌 (自動排序)</span>
+            <span class="text-yellow-400">💡 連線計分：2張=1分, 3張=3分, 4張=5分, 5張=7分, 8張=15分...越長越高！</span>
+        </div>
+        <div id="scoreboard" class="flex justify-start md:justify-center gap-3 overflow-x-auto pb-2 items-stretch min-h-[100px]">
+            <!-- JS 動態生成計分板 -->
+        </div>
+    </footer>
+
+    <!-- 遊戲結束結算畫面 -->
+    <div id="game-over-screen" class="fixed inset-0 bg-black bg-opacity-80 hidden justify-center items-center z-50 flex-col px-4 text-center">
+        <div class="bg-white p-6 md:p-8 rounded-2xl max-w-lg w-full shadow-2xl relative">
+            <h2 id="result-title" class="text-4xl md:text-5xl font-black mb-4 text-indigo-600 drop-shadow">遊戲結束！</h2>
+            <div id="result-desc" class="text-lg md:text-xl mb-6 text-gray-700 leading-relaxed font-bold flex flex-col gap-3"></div>
+            
+            <div class="flex flex-col gap-3 w-full mt-4">
+                <button onclick="reviewBoard()" class="bg-blue-500 hover:bg-blue-600 text-white text-xl font-black py-3 px-6 rounded-xl transition-all shadow-lg w-full border-2 border-blue-300">
+                    👀 回到殘局看牌
+                </button>
+                <button onclick="location.reload()" class="bg-green-500 hover:bg-green-600 text-white text-xl font-black py-3 px-6 rounded-xl transition-all shadow-lg w-full border-2 border-green-300">
+                    🔄 選擇模式再玩一局
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 核心遊戲狀態
+        const gameState = {
+            mode: 'standard', // 'basic' 或 'standard'
+            cards: [],
+            players: [],
+            currentPlayerIndex: 0,
+            phase: 'setup', // setup, playing, animating, end
+            turnSequence: [], // 當前輪次已成功翻開的卡牌 index 陣列
+            lastErrorIndex: null, // 上次失敗遺留的卡牌 index (橘色框)
+            aiMemory: {}, // AI 記憶，key: index, value: number
+            wrongPickIndex: null, // 記錄當前翻錯的卡，用於動畫標示
+            timerId: null, // 計時器 ID
+            timeLeft: 0, // 剩餘秒數
+            timeLimit: 0 // 初始設定秒數
+        };
+
+        const els = {
+            splashScreen: document.getElementById('splash-screen'),
+            setupPanel: document.getElementById('setup-panel'),
+            advancedSettings: document.getElementById('advanced-settings'),
+            basicModeBadge: document.getElementById('basic-mode-badge'),
+            statusPanel: document.getElementById('status-panel'),
+            humanCount: document.getElementById('human-count'),
+            aiCount: document.getElementById('ai-count'),
+            cardCount: document.getElementById('card-count'),
+            timeLimit: document.getElementById('time-limit'),
+            timerDisplay: document.getElementById('timer-display'),
+            timeLeft: document.getElementById('time-left'),
+            remainingCount: document.getElementById('remaining-count'),
+            minHint: document.getElementById('min-number-hint'),
+            maxHint: document.getElementById('max-number-hint'),
+            turnIndicator: document.getElementById('turn-indicator'),
+            tableCardsArea: document.getElementById('table-cards'),
+            scoreboard: document.getElementById('scoreboard'),
+            gameOverScreen: document.getElementById('game-over-screen'),
+            resultDesc: document.getElementById('result-desc')
+        };
+
+        // 選擇遊戲模式
+        function selectMode(mode) {
+            gameState.mode = mode;
+            els.splashScreen.classList.add('hidden');
+            els.splashScreen.classList.remove('flex');
+            
+            if (mode === 'basic') {
+                els.advancedSettings.classList.add('hidden');
+                els.advancedSettings.classList.remove('flex');
+                els.basicModeBadge.classList.remove('hidden');
+            } else {
+                els.advancedSettings.classList.remove('hidden');
+                els.advancedSettings.classList.add('flex');
+                els.basicModeBadge.classList.add('hidden');
+            }
+        }
+
+        // 數字火車 (20 Express) 連鎖級距計分表
+        const comboScores = [0, 0, 1, 3, 5, 7, 9, 11, 15, 20, 25, 30, 35, 40, 50, 60, 70, 85, 100, 150, 300];
+        function getComboScore(length) {
+            if (length <= 0) return 0;
+            if (length >= 20) return 300;
+            return comboScores[length];
+        }
+
+        function isPrime(num) {
+            for(let i = 2, s = Math.sqrt(num); i <= s; i++) {
+                if(num % i === 0) return false;
+            }
+            return num > 1;
+        }
+
+        function generateDeck(maxCards) {
+            let deck = [];
+            let maxNumber = maxCards + 1; 
+            for (let i = 2; i <= maxNumber; i++) {
+                let hintType = 'normal';
+                let hintText = '';
+                
+                if (isPrime(i)) {
+                    hintType = 'prime';
+                } else if (i % 6 === 0) {
+                    hintType = 'mult6';
+                    hintText = '2,3倍數';
+                } else if (i % 2 === 0) {
+                    hintType = 'mult2';
+                    hintText = '2倍數';
+                } else if (i % 3 === 0) {
+                    hintType = 'mult3';
+                    hintText = '3倍數';
+                }
+
+                deck.push({ number: i, hintType: hintType, hintText: hintText, state: 'hidden' });
+            }
+            return deck;
+        }
+
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function startGame() {
+            const hCount = parseInt(els.humanCount.value);
+            const aCount = parseInt(els.aiCount.value);
+            const totalPlayers = hCount + aCount;
+            
+            if (totalPlayers < 1) {
+                alert("至少需要1位玩家參與！");
+                return;
+            }
+
+            let totalCards, timeLimit;
+            if (gameState.mode === 'basic') {
+                totalCards = 18; // 基礎版強制 18 張
+                timeLimit = 15;  // 基礎版強制 15 秒
+            } else {
+                totalCards = Math.max(12, Math.min(37, parseInt(els.cardCount.value) || 37));
+                timeLimit = parseInt(els.timeLimit.value);
+            }
+            
+            gameState.timeLimit = timeLimit;
+
+            els.setupPanel.classList.add('hidden');
+            els.statusPanel.classList.remove('hidden');
+            els.statusPanel.classList.add('flex');
+            
+            els.minHint.textContent = 2;
+            els.maxHint.textContent = totalCards + 1;
+
+            if (gameState.timeLimit > 0) {
+                els.timerDisplay.classList.remove('hidden');
+            }
+
+            gameState.cards = shuffle(generateDeck(totalCards));
+            gameState.players = [];
+            gameState.turnSequence = [];
+            gameState.aiMemory = {};
+            gameState.wrongPickIndex = null;
+            
+            let pId = 1;
+            for (let i = 0; i < hCount; i++) {
+                gameState.players.push({ id: `玩家 ${i+1}`, name: `👤 玩家 ${i+1}`, isHuman: true, score: 0, collectedCards: [] });
+            }
+            for (let i = 0; i < aCount; i++) {
+                gameState.players.push({ id: `電腦 ${i+1}`, name: `🤖 電腦 ${i+1}`, isHuman: false, score: 0, collectedCards: [] });
+            }
+
+            let startIdx = Math.floor(Math.random() * gameState.cards.length);
+            gameState.cards[startIdx].state = 'revealed';
+            gameState.lastErrorIndex = startIdx; 
+            gameState.aiMemory[startIdx] = gameState.cards[startIdx].number;
+
+            gameState.phase = 'playing';
+            gameState.currentPlayerIndex = 0;
+
+            renderAll();
+            checkTurn();
+        }
+
+        function getCardHTML(card) {
+            let backBg = '#81D4FA'; 
+            let sheepEmoji = '🐑';
+            let sheepStyle = 'text-3xl md:text-5xl z-10 drop-shadow-md';
+            
+            if (card.hintType === 'prime') {
+                sheepEmoji = '🐑';
+                sheepStyle += ' filter invert';
+            } else if (card.hintType === 'mult6') { backBg = '#CE93D8'; } 
+            else if (card.hintType === 'mult2') { backBg = '#FFCDD2'; } 
+            else if (card.hintType === 'mult3') { backBg = '#BBDEFB'; }
+
+            const isRevealed = card.state !== 'hidden';
+            const revealedClass = isRevealed ? 'revealed' : '';
+
+            return `
+                <div class="card ${revealedClass}">
+                    <div class="card-face card-back border-[3px] border-white hover:border-yellow-400 transition-colors" style="background-color: ${backBg}">
+                        <div class="wood-sign text-[10px] md:text-xs px-1 py-1 mb-1 shadow text-center whitespace-nowrap">${card.hintType === 'prime' ? '質數' : card.hintText || '普通'}</div>
+                        <div class="${sheepStyle}">${sheepEmoji}</div>
+                    </div>
+                    <div class="card-face card-front border-[3px] border-white">
+                        <div class="wood-sign text-2xl md:text-3xl px-2 py-1 shadow-lg mb-1">${card.number}</div>
+                        <div class="text-2xl md:text-4xl z-10 drop-shadow-md">🐑</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getMiniCardFrontHTML(card) {
+            let colorClass = "text-gray-800";
+            if (card.hintType === 'prime') colorClass = "text-purple-700";
+            else if (card.hintType === 'mult6') colorClass = "text-red-600";
+            else if (card.hintType === 'mult2') colorClass = "text-blue-600";
+            else if (card.hintType === 'mult3') colorClass = "text-green-700";
+
+            return `
+                <div class="relative w-7 h-10 md:w-9 md:h-12 rounded bg-white shadow-sm flex flex-col justify-center items-center shrink-0 border border-gray-300">
+                    <span class="text-[10px] md:text-xs font-black ${colorClass}">${card.number}</span>
+                </div>
+            `;
+        }
+
+        function renderAll() {
+            let remaining = gameState.cards.filter(c => c.state !== 'collected').length;
+            els.remainingCount.textContent = remaining;
+
+            els.scoreboard.innerHTML = '';
+            gameState.players.forEach(p => {
+                let isCurrent = p.id === gameState.players[gameState.currentPlayerIndex].id && gameState.phase !== 'end';
+                let bgClass = isCurrent ? 'bg-yellow-400 text-gray-900 scale-105 shadow-lg border-2 border-white' : 'bg-gray-700 text-white';
+                let collectedHtml = p.collectedCards.map(c => getMiniCardFrontHTML(c)).join('');
+
+                els.scoreboard.innerHTML += `
+                    <div class="flex flex-col items-center p-2 rounded-xl transition-all duration-300 ${bgClass} min-w-[140px] max-w-[200px] shrink-0">
+                        <span class="text-xs md:text-sm font-bold mb-1">${p.name}</span>
+                        <div class="text-lg md:text-xl font-black bg-white bg-opacity-20 px-3 py-0.5 rounded mb-1 flex items-baseline gap-1">
+                            ${p.score} <span class="text-[10px] md:text-xs font-normal">分</span>
+                            <span class="text-[10px] opacity-80 ml-1">(${p.collectedCards.length}張)</span>
+                        </div>
+                        <div class="flex gap-1 overflow-x-auto w-full px-1 py-1 custom-scrollbar scroll-smooth">
+                            ${collectedHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            els.tableCardsArea.innerHTML = '';
+            gameState.cards.forEach((card, idx) => {
+                let wrapper = document.createElement('div');
+                let classes = ['card-container'];
+                
+                if (card.state === 'collected') classes.push('collected');
+                if (gameState.turnSequence.includes(idx)) classes.push('sequence');
+                if (gameState.lastErrorIndex === idx && gameState.turnSequence.length === 0) classes.push('error-start');
+                if (gameState.wrongPickIndex === idx) classes.push('wrong-pick');
+
+                wrapper.className = classes.join(' ');
+                wrapper.innerHTML = getCardHTML(card);
+                
+                if (card.state !== 'collected') {
+                    // 人類點擊，isAI 預設為 false
+                    wrapper.onclick = () => handleCardSelection(idx, false);
+                }
+                els.tableCardsArea.appendChild(wrapper);
+            });
+        }
+
+        function startTimer() {
+            stopTimer();
+            if (gameState.timeLimit <= 0) return; 
+            
+            gameState.timeLeft = gameState.timeLimit;
+            updateTimerDisplay();
+            
+            gameState.timerId = setInterval(() => {
+                if (gameState.phase !== 'playing') return;
+                gameState.timeLeft--;
+                updateTimerDisplay();
+                
+                if (gameState.timeLeft <= 0) {
+                    handleTimeout();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            if (gameState.timerId) {
+                clearInterval(gameState.timerId);
+                gameState.timerId = null;
+            }
+        }
+
+        function updateTimerDisplay() {
+            if (gameState.timeLimit <= 0) return;
+            els.timeLeft.textContent = gameState.timeLeft;
+            
+            if (gameState.timeLeft <= 3) {
+                els.timerDisplay.classList.add('bg-red-600', 'animate-pulse');
+                els.timerDisplay.classList.remove('bg-gray-800');
+                els.timeLeft.classList.replace('text-yellow-400', 'text-white');
+            } else {
+                els.timerDisplay.classList.remove('bg-red-600', 'animate-pulse');
+                els.timerDisplay.classList.add('bg-gray-800');
+                els.timeLeft.classList.replace('text-white', 'text-yellow-400');
+            }
+        }
+
+        function handleTimeout() {
+            stopTimer();
+            if (gameState.phase !== 'playing') return;
+
+            gameState.phase = 'animating';
+            let currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            let seqLen = gameState.turnSequence.length;
+            let points = getComboScore(seqLen);
+
+            els.turnIndicator.className = "text-sm md:text-lg font-black text-white bg-red-500 px-4 md:px-6 py-2 rounded-full shadow-lg";
+            els.turnIndicator.textContent = `⏰ 時間到！連線 ${seqLen} 張，獲得 ${points} 分！`;
+
+            setTimeout(() => {
+                if (seqLen >= 2) {
+                    currentPlayer.score += points;
+                    gameState.turnSequence.forEach(seqIdx => {
+                        let collectedCard = gameState.cards[seqIdx];
+                        collectedCard.state = 'collected';
+                        currentPlayer.collectedCards.push(collectedCard);
+                    });
+                    currentPlayer.collectedCards.sort((a, b) => a.number - b.number);
+                } else if (seqLen === 1) {
+                    gameState.cards[gameState.turnSequence[0]].state = 'hidden';
+                }
+
+                if (seqLen === 0 && gameState.lastErrorIndex !== null) {
+                    gameState.cards[gameState.lastErrorIndex].state = 'hidden';
+                }
+
+                gameState.lastErrorIndex = null;
+                gameState.turnSequence = [];
+                gameState.wrongPickIndex = null;
+
+                if (checkWinCondition()) return;
+
+                gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+                gameState.phase = 'playing';
+                renderAll();
+                checkTurn();
+            }, 2000);
+        }
+
+        function setTurnIndicator() {
+            if (gameState.phase === 'end') return;
+            
+            let p = gameState.players[gameState.currentPlayerIndex];
+            els.turnIndicator.classList.remove('hidden');
+
+            if (p.isHuman) {
+                if (gameState.turnSequence.length === 0) {
+                    if (gameState.lastErrorIndex !== null) {
+                        els.turnIndicator.className = "text-sm md:text-lg font-black text-gray-900 bg-yellow-400 px-4 md:px-6 py-2 rounded-full shadow-lg animate-pulse";
+                        els.turnIndicator.textContent = "👉 請點覆蓋的牌找連續數字，或【點擊橘框】蓋牌重找";
+                    } else {
+                        els.turnIndicator.className = "text-sm md:text-lg font-black text-white bg-green-500 px-4 md:px-6 py-2 rounded-full shadow-lg animate-pulse";
+                        els.turnIndicator.textContent = "👉 換你了！請翻開一張新的起始牌";
+                    }
+                } else {
+                    els.turnIndicator.className = "text-sm md:text-lg font-black text-gray-900 bg-yellow-400 px-4 md:px-6 py-2 rounded-full shadow-lg animate-pulse";
+                    els.turnIndicator.textContent = `🔥 讚啦！已連 ${gameState.turnSequence.length} 張，請繼續找連續數字 (+1 或 -1)`;
+                }
+            } else {
+                els.turnIndicator.className = "text-sm md:text-lg font-bold text-white bg-gray-600 px-4 md:px-6 py-2 rounded-full shadow-lg";
+                els.turnIndicator.textContent = `🤔 ${p.name} 思考中...`;
+            }
+        }
+
+        function checkTurn() {
+            if (gameState.phase === 'end') return;
+            setTurnIndicator();
+            startTimer(); 
+            
+            if (checkWinCondition()) return;
+
+            let p = gameState.players[gameState.currentPlayerIndex];
+            if (!p.isHuman && gameState.phase === 'playing') {
+                setTimeout(aiPlayTurn, 600);
+            }
+        }
+
+        function handleCardSelection(idx, isAI = false) {
+            let state = gameState;
+            if (state.phase !== 'playing') return;
+            
+            let p = state.players[state.currentPlayerIndex];
+            if (!p.isHuman && !isAI) return; 
+
+            if (idx === undefined || idx < 0 || idx >= state.cards.length) return;
+            let card = state.cards[idx];
+            if (card.state === 'collected') return;
+
+            if (state.turnSequence.length === 0 && state.lastErrorIndex === idx) {
+                card.state = 'hidden';
+                state.lastErrorIndex = null;
+                renderAll();
+                checkTurn();
+                return;
+            }
+
+            if (card.state === 'hidden') {
+                card.state = 'revealed';
+                state.aiMemory[idx] = card.number;
+
+                if (state.turnSequence.length === 0 && state.lastErrorIndex !== null) {
+                    state.turnSequence.push(state.lastErrorIndex);
+                }
+
+                if (state.turnSequence.length > 0) {
+                    let currentSeqNumbers = state.turnSequence.map(i => state.cards[i].number);
+                    let minNum = Math.min(...currentSeqNumbers);
+                    let maxNum = Math.max(...currentSeqNumbers);
+
+                    if (card.number === minNum - 1 || card.number === maxNum + 1) {
+                        state.turnSequence.push(idx);
+                        startTimer(); 
+                        renderAll();
+                        checkTurn();
+                    } else {
+                        handleMistake(idx, state.turnSequence);
+                    }
+                } else {
+                    state.turnSequence.push(idx);
+                    startTimer(); 
+                    renderAll();
+                    checkTurn();
+                }
+            }
+        }
+
+        function handleMistake(wrongIdx, currentSequence) {
+            stopTimer(); 
+            let state = gameState;
+            state.phase = 'animating'; 
+            state.wrongPickIndex = wrongIdx;
+            renderAll(); 
+            
+            let seqLen = currentSequence.length;
+            let points = getComboScore(seqLen);
+
+            els.turnIndicator.className = "text-sm md:text-lg font-black text-white bg-red-500 px-4 md:px-6 py-2 rounded-full shadow-lg";
+            els.turnIndicator.textContent = `❌ 數字不連續！連線 ${seqLen} 張，獲得 ${points} 分！`;
+
+            setTimeout(() => {
+                let currentPlayer = state.players[state.currentPlayerIndex];
+
+                if (seqLen >= 2) {
+                    currentPlayer.score += points;
+                    currentSequence.forEach(seqIdx => {
+                        let collectedCard = state.cards[seqIdx];
+                        collectedCard.state = 'collected';
+                        currentPlayer.collectedCards.push(collectedCard);
+                    });
+                    currentPlayer.collectedCards.sort((a, b) => a.number - b.number);
+                } else if (seqLen === 1) {
+                    state.cards[currentSequence[0]].state = 'hidden';
+                }
+                
+                state.lastErrorIndex = wrongIdx; 
+                state.turnSequence = [];
+                state.wrongPickIndex = null;
+
+                if (checkWinCondition()) return;
+
+                state.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length;
+                state.phase = 'playing';
+                renderAll();
+                checkTurn();
+            }, 1800); 
+        }
+
+        function aiPlayTurn() {
+            if (gameState.phase !== 'playing') return;
+            let state = gameState;
+            let hiddenIndices = state.cards.map((c, i) => c.state === 'hidden' ? i : -1).filter(i => i !== -1);
+            if (hiddenIndices.length === 0) return;
+
+            if (state.turnSequence.length === 0) {
+                if (state.lastErrorIndex !== null) {
+                    if (state.lastErrorIndex < 0 || state.lastErrorIndex >= state.cards.length) return;
+                    let num = state.cards[state.lastErrorIndex].number;
+                    let target1 = num + 1, target2 = num - 1;
+                    
+                    let foundMatch = hiddenIndices.find(idx => state.aiMemory[idx] === target1 || state.aiMemory[idx] === target2);
+                    
+                    if (foundMatch !== undefined) {
+                        handleCardSelection(foundMatch, true); 
+                    } else {
+                        handleCardSelection(state.lastErrorIndex, true);
+                    }
+                    return;
+                }
+                let randomIdx = hiddenIndices[Math.floor(Math.random() * hiddenIndices.length)];
+                handleCardSelection(randomIdx, true);
+            } else {
+                let currentSeqNumbers = state.turnSequence.map(i => state.cards[i].number);
+                let minNum = Math.min(...currentSeqNumbers);
+                let maxNum = Math.max(...currentSeqNumbers);
+                
+                let target1 = maxNum + 1;
+                let target2 = minNum - 1;
+
+                let foundMatch = hiddenIndices.find(idx => state.aiMemory[idx] === target1 || state.aiMemory[idx] === target2);
+                
+                if (foundMatch !== undefined) {
+                    handleCardSelection(foundMatch, true);
+                } else {
+                    let randomIdx = hiddenIndices[Math.floor(Math.random() * hiddenIndices.length)];
+                    handleCardSelection(randomIdx, true);
+                }
+            }
+        }
+
+        function checkWinCondition() {
+            let uncollected = gameState.cards.filter(c => c.state !== 'collected');
+            
+            if (uncollected.length === 0) {
+                endGame();
+                return true;
+            } 
+            
+            if (gameState.turnSequence.length === 0) {
+                if (uncollected.length === 1) {
+                    let lastIdx = gameState.cards.findIndex(c => c.state !== 'collected');
+                    let lastCard = gameState.cards[lastIdx];
+                    let p = gameState.players[gameState.currentPlayerIndex];
+                    
+                    lastCard.state = 'collected';
+                    p.collectedCards.push(lastCard);
+                    p.score += getComboScore(1); 
+                    p.collectedCards.sort((a, b) => a.number - b.number);
+                    
+                    renderAll();
+                    endGame();
+                    return true;
+                }
+                
+                let sortedUncollected = [...uncollected].sort((a, b) => a.number - b.number);
+                let hasPossiblePair = false;
+                for (let i = 0; i < sortedUncollected.length - 1; i++) {
+                    if (sortedUncollected[i + 1].number - sortedUncollected[i].number === 1) {
+                        hasPossiblePair = true;
+                        break;
+                    }
+                }
+                
+                if (!hasPossiblePair) {
+                    endGame("剩餘卡牌無法再連線，提前結算結束！");
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        function endGame(reason = "") {
+            stopTimer();
+            gameState.phase = 'end';
+            els.turnIndicator.classList.add('hidden');
+            if(gameState.timeLimit > 0) els.timerDisplay.classList.add('hidden');
+            
+            let sortedPlayers = [...gameState.players].sort((a, b) => b.score - a.score);
+            let html = '';
+            
+            if (reason) {
+                html += `<div class="text-red-500 font-bold mb-4 text-center text-sm md:text-xl border-b-2 border-red-200 pb-2">${reason}</div>`;
+            }
+            
+            sortedPlayers.forEach((p, index) => {
+                let medal = index === 0 ? '🥇' : (index === 1 ? '🥈' : (index === 2 ? '🥉' : '👏'));
+                let color = p.isHuman ? 'text-green-600' : 'text-gray-600';
+                html += `
+                    <div class="flex justify-between items-center bg-gray-100 px-4 md:px-6 py-3 rounded-xl shadow-inner border border-gray-200">
+                        <span class="text-xl md:text-2xl font-bold">${medal} <span class="${color} ml-1 md:ml-2">${p.name}</span></span>
+                        <span class="text-2xl md:text-4xl font-black text-indigo-500">${p.score} <span class="text-xs md:text-sm text-gray-500 font-bold">分 (${p.collectedCards.length}張)</span></span>
+                    </div>
+                `;
+            });
+
+            els.resultDesc.innerHTML = html;
+            els.gameOverScreen.classList.remove('hidden');
+            els.gameOverScreen.classList.add('flex');
+        }
+
+        function reviewBoard() {
+            els.gameOverScreen.classList.add('hidden');
+            els.gameOverScreen.classList.remove('flex');
+
+            gameState.turnSequence = [];
+            gameState.lastErrorIndex = null;
+            gameState.wrongPickIndex = null;
+
+            gameState.cards.forEach(card => {
+                if (card.state !== 'collected') {
+                    card.state = 'revealed';
+                }
+            });
+
+            els.turnIndicator.classList.remove('hidden');
+            els.turnIndicator.className = "text-sm md:text-lg font-black text-white bg-indigo-600 px-4 md:px-6 py-2 rounded-full shadow-lg flex items-center gap-3";
+            els.turnIndicator.innerHTML = `
+                <span>🔍 殘局回顧模式 (全數翻開)</span>
+                <button onclick="location.reload()" class="bg-white text-indigo-600 hover:bg-gray-100 px-3 py-1 rounded-full text-sm font-bold transition shadow border border-indigo-200">🔄 再玩一局</button>
+            `;
+
+            renderAll();
+        }
+    </script>
+</body>
+</html>

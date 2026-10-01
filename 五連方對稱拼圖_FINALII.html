@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>五方連塊 PRO：對稱探索</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: manipulation; }
+    .board-cell { transition: background-color 0.15s ease-out, transform 0.1s ease-out; }
+    .active-piece-cell {
+      z-index: 20; position: relative; transform: scale(1.05);
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+      cursor: grab;
+    }
+    .active-piece-cell:active { cursor: grabbing; }
+    .placed-piece-cell { cursor: pointer; }
+    .placed-piece-cell:hover { filter: brightness(1.15); }
+    .hide { display: none !important; }
+    
+    /* 顏色定義 */
+    .bg-red-500 { background-color: #ef4444; } .bg-sky-400 { background-color: #38bdf8; }
+    .bg-pink-500 { background-color: #ec4899; } .bg-purple-500 { background-color: #a855f7; }
+    .bg-cyan-500 { background-color: #06b6d4; } .bg-orange-500 { background-color: #f97316; }
+    .bg-amber-400 { background-color: #fbbf24; } .bg-green-500 { background-color: #22c55e; }
+    .bg-blue-600 { background-color: #2563eb; } .bg-rose-400 { background-color: #fb7185; }
+    .bg-teal-400 { background-color: #2dd4bf; } .bg-yellow-400 { background-color: #facc15; }
+    
+    .invalid-cell { background-color: rgba(239, 68, 68, 0.9) !important; }
+    
+    /* 大畫布背景底紋 */
+    .canvas-bg {
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col items-center py-4 px-2 sm:px-4">
+
+  <div class="max-w-7xl w-full flex flex-col lg:flex-row justify-between items-center mb-4 gap-4 bg-white p-3 sm:p-4 rounded-2xl shadow-sm border border-slate-200">
+    <div class="flex items-center gap-3">
+      <div class="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl shadow-inner">
+        <i class="ph ph-intersect text-3xl"></i>
+      </div>
+      <div>
+        <h1 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight">五方連塊 PRO<span class="text-indigo-600 ml-2">對稱探索</span></h1>
+        <p class="text-xs sm:text-sm text-slate-500 font-semibold">16x16 自由畫布 • 自動對稱判定</p>
+      </div>
+    </div>
+    
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="openGallery()" class="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-2 rounded-xl font-bold transition-colors border border-slate-200 shadow-sm text-sm">
+        <i class="ph ph-books text-lg"></i> 圖鑑 <span id="gallery-count" class="bg-indigo-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">0</span>
+      </button>
+      
+      <button onclick="openMathModal()" class="flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-xl font-bold transition-colors border border-blue-200 shadow-sm text-sm">
+        <i class="ph ph-calculator text-lg"></i> 零件組合數
+      </button>
+
+      <button onclick="openHintModal()" class="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 px-3 py-2 rounded-xl font-bold transition-colors border border-amber-200 shadow-sm text-sm">
+        <i class="ph ph-lightbulb text-lg"></i> 靈感提示
+      </button>
+      
+      <div class="h-6 w-px bg-slate-200 hidden sm:block mx-1"></div>
+      
+      <select id="level-select" class="bg-white border-2 border-slate-200 text-slate-800 font-bold rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-400 cursor-pointer shadow-sm text-sm">
+        <!-- JS 動態生成選項 -->
+      </select>
+      <button id="btn-reset" class="p-2 bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-500 rounded-xl transition-colors border border-slate-200 shadow-sm" title="清空畫布">
+        <i class="ph ph-trash text-xl"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-12 gap-4 relative">
+    
+    <!-- 左側：自由遊戲盤面 -->
+    <div class="lg:col-span-8 flex flex-col items-center">
+      
+      <!-- 外框輔助線狀態徽章 -->
+      <div id="outline-badge" class="hide w-full mb-2 flex justify-center">
+         <div class="bg-indigo-100 border border-indigo-200 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold shadow-sm flex items-center gap-2 animate-pulse">
+            <i class="ph ph-magic-wand"></i> <span id="outline-badge-text">外框輔助中</span>
+            <button id="btn-clear-outline" class="ml-2 bg-indigo-200 hover:bg-indigo-300 text-indigo-800 rounded-full p-0.5 transition-colors"><i class="ph ph-x"></i></button>
+         </div>
+      </div>
+
+      <div class="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-200 w-full flex justify-center items-center overflow-hidden min-h-[500px] relative touch-none select-none">
+        
+        <!-- 動態 Toast 提示 (非干擾式) -->
+        <div id="toast-msg" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full shadow-2xl font-bold text-sm transition-all duration-300 opacity-0 translate-y-4 pointer-events-none z-50 flex items-center gap-2">
+           <i class="ph ph-info"></i> <span id="toast-text"></span>
+        </div>
+
+        <!-- 勝利 Modal -->
+        <div id="result-modal" class="hide absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl transition-opacity duration-300 p-6 text-center">
+            <div class="bg-indigo-100 text-indigo-600 p-5 rounded-full mb-4 shadow-inner">
+              <i class="ph ph-sketch-logo text-6xl animate-bounce"></i>
+            </div>
+            <h2 class="text-3xl font-black text-slate-800 mb-2">對稱發現！</h2>
+            <p id="sym-type-text" class="text-xl font-bold text-indigo-600 mb-6 bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100"></p>
+            <div class="flex gap-3">
+              <button onclick="closeModal()" class="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold shadow-sm transition-transform active:scale-95">繼續修改</button>
+              <button onclick="document.getElementById('btn-reset').click()" class="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-md shadow-indigo-200 transition-transform active:scale-95">清空重來</button>
+            </div>
+        </div>
+
+        <div class="relative canvas-bg border-2 border-slate-200 rounded-xl p-2 sm:p-4 shadow-inner" id="board-area">
+          <div id="main-board" class="grid gap-px relative z-10 touch-none">
+            <!-- JS 生成 Cells (16x16) -->
+          </div>
+
+          <!-- 浮動控制工具列 -->
+          <div id="floating-toolbar" class="hide absolute z-40 flex items-center gap-1 bg-white/95 backdrop-blur shadow-xl rounded-full px-3 py-2 border border-slate-200 transition-all duration-100">
+            <button id="tb-rotate" class="p-2 hover:bg-slate-100 rounded-full text-slate-700 transition-colors" title="旋轉 (R)"><i class="ph ph-arrow-clockwise text-xl font-bold"></i></button>
+            <button id="tb-flip" class="p-2 hover:bg-slate-100 rounded-full text-slate-700 transition-colors" title="翻轉 (F)"><i class="ph ph-arrows-left-right text-xl font-bold"></i></button>
+            <div class="w-px h-6 bg-slate-200 mx-1"></div>
+            <button id="tb-confirm" class="p-2 hover:bg-green-100 text-green-600 rounded-full transition-colors" title="放置 (Enter)"><i class="ph ph-check text-2xl font-bold"></i></button>
+            <button id="tb-cancel" class="p-2 hover:bg-red-100 text-red-500 rounded-full transition-colors" title="退回 (Esc)"><i class="ph ph-x text-2xl font-bold"></i></button>
+          </div>
+        </div>
+      </div>
+      
+      <div class="w-full mt-3 flex justify-center items-center px-4 text-xs sm:text-sm text-slate-500 font-medium gap-4">
+         <span>🖱️ 拖曳積木可平移</span>
+         <span class="hidden sm:inline">⌨️ 方向鍵移動 / R 旋轉 / F 翻轉</span>
+      </div>
+    </div>
+
+    <!-- 右側：狀態與倉庫區 -->
+    <div class="lg:col-span-4 flex flex-col gap-4">
+      
+      <div class="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 flex items-center justify-between">
+        <div>
+          <p class="text-sm text-slate-500 font-bold mb-1 flex items-center gap-1"><i class="ph ph-target text-base"></i> 放置進度</p>
+          <div class="text-3xl font-black text-indigo-600">
+            <span id="placed-count">0</span> <span class="text-xl text-slate-400">/ <span id="target-count">5</span></span>
+          </div>
+        </div>
+        <div id="status-badge" class="px-4 py-2 bg-slate-100 text-slate-500 rounded-xl font-bold text-sm flex items-center gap-2 border border-slate-200">
+           探索中...
+        </div>
+      </div>
+
+      <div class="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 flex-grow relative overflow-hidden flex flex-col">
+        <div id="inventory-overlay" class="hide absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex items-center justify-center">
+           <span class="bg-slate-800 text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-lg flex items-center gap-2">
+             <i class="ph-fill ph-hand-pointing"></i> 請先操作盤面上的積木
+           </span>
+        </div>
+        
+        <h3 class="text-lg font-bold text-slate-800 mb-3 flex items-center justify-between">
+           <span>可用零件庫</span>
+        </h3>
+        
+        <div id="inventory-grid" class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-3 gap-2.5 flex-grow content-start">
+          <!-- JS 生成庫存 -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-8 text-center text-slate-400 text-xs font-medium tracking-wide">
+      網頁設計者：新北市林口國中 李政憲老師
+  </div>
+
+  <!-- 零件組合數統計 Modal -->
+  <div id="math-modal" class="hide fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden transform transition-all">
+      <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-blue-50/50">
+        <h2 class="text-xl font-bold text-blue-900 flex items-center gap-2">
+          <i class="ph ph-calculator text-blue-600"></i> 探索進度與數學組合統計
+        </h2>
+        <button onclick="document.getElementById('math-modal').classList.add('hide')" class="p-2 bg-white hover:bg-slate-100 text-slate-500 rounded-full transition-colors shadow-sm">
+          <i class="ph ph-x text-xl font-bold"></i>
+        </button>
+      </div>
+      <div class="p-6">
+         <p class="text-sm text-slate-600 mb-4 font-medium">
+            從 12 種五連方塊中挑選 N 塊不重複的零件，共有 <strong>C(12, N)</strong> 種組合可能性。<br>而能成功拼出對稱圖形的組合只是其中的一小部分，這正是組合幾何的迷人之處！
+         </p>
+         <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-sm text-left text-slate-600">
+               <thead class="text-xs text-slate-700 uppercase bg-slate-100">
+                  <tr>
+                     <th scope="col" class="px-4 py-3 text-center">使用塊數 (N)</th>
+                     <th scope="col" class="px-4 py-3 text-center">數學公式</th>
+                     <th scope="col" class="px-4 py-3 text-center">零件組合可能性</th>
+                     <th scope="col" class="px-4 py-3 text-center bg-indigo-50 text-indigo-700 border-l border-indigo-100">您已發現的對稱圖形</th>
+                  </tr>
+               </thead>
+               <tbody id="math-table-body" class="divide-y divide-slate-100">
+                  <!-- JS 生成 -->
+               </tbody>
+               <tfoot class="bg-slate-50 font-black">
+                  <tr>
+                     <td colspan="2" class="px-4 py-3 text-right">總計 (2~12塊)：</td>
+                     <td class="px-4 py-3 text-center text-blue-600">4,082 種</td>
+                     <td class="px-4 py-3 text-center bg-indigo-100 text-indigo-800 text-base" id="total-found-count">0</td>
+                  </tr>
+               </tfoot>
+            </table>
+         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 靈感提示 Modal -->
+  <div id="hint-modal" class="hide fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
+      <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-amber-50/80">
+        <h2 class="text-xl font-bold text-amber-900 flex items-center gap-2">
+          <i class="ph-fill ph-lightbulb text-amber-500"></i> 過關靈感與提示
+        </h2>
+        <button onclick="document.getElementById('hint-modal').classList.add('hide')" class="p-2 bg-white hover:bg-slate-100 text-slate-500 rounded-full transition-colors shadow-sm">
+          <i class="ph ph-x text-xl font-bold"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex flex-col items-center">
+         <div class="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mb-4 shadow-inner">
+            <i class="ph ph-magic-wand text-3xl"></i>
+         </div>
+         <p class="text-slate-600 font-medium text-center mb-6">
+            五連方的組合變化萬千，如果卡關了，不妨試試參考以下的經典配方或載入輔助外框！
+         </p>
+         <div id="hint-text" class="w-full">
+            <!-- JS 生成提示與按鈕 -->
+         </div>
+         <button onclick="document.getElementById('hint-modal').classList.add('hide')" class="mt-4 w-full px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-md shadow-amber-200 transition-transform active:scale-95">我明白了，來試試看！</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 圖鑑 Modal -->
+  <div id="gallery-modal" class="hide fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl w-full max-w-5xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden transform transition-all">
+      <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-indigo-50/80">
+        <h2 class="text-xl font-bold text-indigo-900 flex items-center gap-2">
+          <i class="ph ph-books text-indigo-600"></i>
+          <span id="gallery-title">對稱幾何圖鑑</span>
+        </h2>
+        <button onclick="document.getElementById('gallery-modal').classList.add('hide')" class="p-2 bg-white hover:bg-slate-100 text-slate-500 rounded-full transition-colors shadow-sm">
+          <i class="ph ph-x text-xl font-bold"></i>
+        </button>
+      </div>
+      <div class="p-6 overflow-y-auto flex-grow bg-slate-50" id="gallery-content">
+        <!-- JS 生成圖鑑內容 -->
+      </div>
+    </div>
+  </div>
+
+<script>
+const PENTOMINOES = {
+  I: { color: 'bg-red-500', matrix: [[1, 1, 1, 1, 1]] },
+  L: { color: 'bg-sky-400', matrix: [[1, 0], [1, 0], [1, 0], [1, 1]] },
+  T: { color: 'bg-pink-500', matrix: [[1, 1, 1], [0, 1, 0], [0, 1, 0]] },
+  P: { color: 'bg-purple-500', matrix: [[1, 1], [1, 1], [1, 0]] },
+  U: { color: 'bg-cyan-500', matrix: [[1, 0, 1], [1, 1, 1]] },
+  Z: { color: 'bg-orange-500', matrix: [[1, 1, 0], [0, 1, 0], [0, 1, 1]] },
+  N: { color: 'bg-amber-400', matrix: [[0, 1], [0, 1], [1, 1], [1, 0]] },
+  Y: { color: 'bg-green-500', matrix: [[0, 1], [1, 1], [0, 1], [0, 1]] },
+  X: { color: 'bg-blue-600', matrix: [[0, 1, 0], [1, 1, 1], [0, 1, 0]] },
+  W: { color: 'bg-rose-400', matrix: [[1, 0, 0], [1, 1, 0], [0, 1, 1]] },
+  V: { color: 'bg-teal-400', matrix: [[1, 0, 0], [1, 0, 0], [1, 1, 1]] },
+  F: { color: 'bg-yellow-400', matrix: [[0, 1, 1], [1, 1, 0], [0, 1, 0]] }
+};
+
+const LEVELS = {
+  '2': { target: 2, label: '入門：2 塊組合' },
+  '3': { target: 3, label: '基礎：3 塊組合' },
+  '4': { target: 4, label: '初階：4 塊組合' },
+  '5': { target: 5, label: '經典：5 塊組合 (5x5)' },
+  '6': { target: 6, label: '進階：6 塊組合' },
+  '7': { target: 7, label: '巧思：7 塊組合' },
+  '8': { target: 8, label: '挑戰：8 塊組合' },
+  '9': { target: 9, label: '困難：9 塊組合' },
+  '10': { target: 10, label: '大師：10 塊組合' },
+  '11': { target: 11, label: '史詩：11 塊組合' },
+  '12': { target: 12, label: '極限：12 塊全數組合' }
+};
+
+// 嚴格修正後的外框設定 (Edge-to-Edge 連接保證)
+const OUTLINES_CONFIG = {
+  '2_1': { name: '2x5 矩形', pattern: ['XXXXX', 'XXXXX'] },
+  '2_2': { name: '對稱梯形', pattern: ['  XX  ', ' XXXX ', ' XXXX '] },
+  '2_3': { name: '對稱十字', pattern: ['  XX  ', ' XXXX ', '  XX  ', '  XX  '] },
+  
+  '3_1': { name: '王者寶劍', pattern: ['  X  ', '  X  ', '  X  ', '  X  ', '  X  ', ' XXX ', '  X  ', '  X  ', ' XXX ', ' X X '] }, // I, T, U
+  '3_2': { name: '對稱寶石', pattern: ['  X  ', 'XXXXX', 'XXXXX', ' XXX ', '  X  '] }, // P, T, W
+  '3_3': { name: '魔法權杖', pattern: ['  X  ', '  X  ', '  X  ', '  X  ', '  X  ', '  X  ', ' XXX ', '  X  ', ' XXX ', ' X X '] }, // I, X, U
+
+  '4_1': { name: '神聖巨劍', pattern: ['  X  ', '  X  ', '  X  ', '  X  ', '  X  ', '  X  ', ' XXX ', '  X  ', ' XXX ', '  X  ', '  X  ', ' XXX ', ' X X '] }, // I, X, T, U
+  '4_2': { name: '守衛塔', pattern: [' X X ', ' XXX ', '  X  ', '  X  ', '  X  ', '  X  ', '  X  ', '  X  ', ' XXX ', '  X  ', ' XXX ', '  X  ', '  X  '] }, // U, I, X, T
+  '4_3': { name: '祭司杖', pattern: ['  XXX  ', '   X   ', '   X   ', '   X   ', '  XXX  ', '   X   ', '  XXX  ', '  X X  ', ' XXXXX '] }, // T, X, U, I
+
+  '5_1': { name: '5x5 正方形', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX'] },
+  
+  '6_1': { name: '5x6 矩形', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX'] },
+  '6_2': { name: '提籃正方', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', ' X X ', ' XXX '] },
+  '6_3': { name: '天線正方', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', ' XXX ', '  X  ', '  X  '] },
+
+  '7_1': { name: '王者皇冠', pattern: ['  X  ', '  X  ', '  X  ', '  X  ', '  X  ', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', ' XXX ', '  X  ', '  X  '] },
+  '7_2': { name: '對稱魔法陣', pattern: ['  X  ', ' XXX ', '  X  ', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', '  X  ', '  X  ', '  X  ', '  X  ', '  X  '] },
+  '7_3': { name: '獎盃', pattern: [' XXX ', '  X  ', '  X  ', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', ' X X ', ' XXX '] },
+
+  '8_1': { name: '對稱神殿', pattern: ['  X  ', '  X  ', '  X  ', '  X  ', '  X  ', ' XXX ', '  X  ', '  X  ', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', ' X X ', ' XXX '] },
+  '8_2': { name: '4x10 矩形', pattern: ['XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX'] },
+  '8_3': { name: '蝙蝠展翼', pattern: ['   XX   ', '  XXXX  ', ' XXXXXX ', 'XXXXXXXX', 'XXXXXXXX', ' XXXXXX ', '  XXXX  ', '   XX   '] },
+  '9_1': { name: '5x9 矩形', pattern: ['XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX'] },
+  '9_2': { name: '巨大十字', pattern: ['   XXX   ', '   XXX   ', '   XXX   ', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', '   XXX   ', '   XXX   ', '   XXX   '] },
+  '9_3': { name: '3x15 矩形', pattern: ['XXXXXXXXXXXXXXX', 'XXXXXXXXXXXXXXX', 'XXXXXXXXXXXXXXX'] },
+  '10_1': { name: '5x10 矩形', pattern: ['XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX'] },
+  '10_2': { name: '圓角厚矩形', pattern: [' XXXXXXX ', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', ' XXXXXXX '] },
+  '10_3': { name: '10x5 直立矩形', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX'] },
+  '11_1': { name: '5x11 矩形', pattern: ['XXXXXXXXXXX', 'XXXXXXXXXXX', 'XXXXXXXXXXX', 'XXXXXXXXXXX', 'XXXXXXXXXXX'] },
+  '11_2': { name: '11x5 直立矩形', pattern: ['XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX', 'XXXXX'] },
+  '11_3': { name: '平頂金字塔', pattern: ['   XXX   ', '  XXXXX  ', ' XXXXXXX ', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX', 'XXXXXXXXX'] },
+  '12_1': { name: '5x12 矩形', pattern: ['XXXXXXXXXXXX', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX', 'XXXXXXXXXXXX'] },
+  '12_2': { name: '8x8 中空回字', pattern: ['XXXXXXXX', 'XXXXXXXX', 'XXXXXXXX', 'XXX  XXX', 'XXX  XXX', 'XXXXXXXX', 'XXXXXXXX', 'XXXXXXXX'] },
+  '12_3': { name: '6x10 矩形', pattern: ['XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XXXXXXXXXX'] },
+};
+
+const ROWS = 16, COLS = 16;
+let currentLevelKey = '5';
+let placedPieces = []; // { id, type, matrix, r, c }
+let activePiece = null;
+let solutions = {}; // { '5': [ {hash, matrix, symType} ] }
+let activeOutlineKey = null; 
+let activeOutlinePieces = []; 
+let dragCtx = null;
+let toastTimeout = null;
+let isModalOpen = false;
+
+// DOM Elements
+const elLevelSelect = document.getElementById('level-select');
+const elMainBoard = document.getElementById('main-board');
+const elInventoryGrid = document.getElementById('inventory-grid');
+const elInventoryOverlay = document.getElementById('inventory-overlay');
+const elPlacedCount = document.getElementById('placed-count');
+const elTargetCount = document.getElementById('target-count');
+const elStatusBadge = document.getElementById('status-badge');
+const elFloatingToolbar = document.getElementById('floating-toolbar');
+const elResultModal = document.getElementById('result-modal');
+const elGalleryModal = document.getElementById('gallery-modal');
+const elMathModal = document.getElementById('math-modal');
+const elHintModal = document.getElementById('hint-modal');
+const elOutlineBadge = document.getElementById('outline-badge');
+const elBtnClearOutline = document.getElementById('btn-clear-outline');
+
+function init() {
+  Object.keys(LEVELS).forEach(key => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = LEVELS[key].label;
+    if (key === currentLevelKey) opt.selected = true;
+    elLevelSelect.appendChild(opt);
+  });
+
+  elLevelSelect.addEventListener('change', (e) => {
+    currentLevelKey = e.target.value;
+    activeOutlineKey = null;
+    activeOutlinePieces = [];
+    resetBoard();
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    activeOutlineKey = null;
+    activeOutlinePieces = [];
+    resetBoard();
+  });
+  
+  elBtnClearOutline.addEventListener('click', () => {
+    activeOutlineKey = null;
+    activeOutlinePieces = [];
+    render();
+  });
+
+  // Toolbar events
+  document.getElementById('tb-rotate').addEventListener('click', handleRotate);
+  document.getElementById('tb-flip').addEventListener('click', handleFlip);
+  document.getElementById('tb-confirm').addEventListener('click', handleConfirm);
+  document.getElementById('tb-cancel').addEventListener('click', handleCancel);
+
+  // Pointer & Keyboard events
+  elMainBoard.addEventListener('pointerdown', handleBoardPointerDown);
+  window.addEventListener('pointermove', handleBoardPointerMove);
+  window.addEventListener('pointerup', handleBoardPointerUp);
+  window.addEventListener('keydown', handleKeyDown);
+  elFloatingToolbar.addEventListener('pointerdown', e => e.stopPropagation());
+
+  resetBoard();
+}
+
+function getBoardMatrix() {
+  const b = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  placedPieces.forEach(p => {
+    p.matrix.forEach((row, dr) => {
+      row.forEach((val, dc) => {
+        if (val) b[p.r + dr][p.c + dc] = p;
+      });
+    });
+  });
+  return b;
+}
+
+function render() {
+  const lvl = LEVELS[currentLevelKey];
+  const b = getBoardMatrix();
+  const availableTypes = Object.keys(PENTOMINOES).filter(
+    t => !placedPieces.find(p => p.type === t) && (!activePiece || activePiece.type !== t)
+  );
+
+  // Outline handling
+  let outlineMatrix = null;
+  let oStartR = 0, oStartC = 0;
+  if (activeOutlineKey && OUTLINES_CONFIG[activeOutlineKey]) {
+    const config = OUTLINES_CONFIG[activeOutlineKey];
+    outlineMatrix = config.pattern.map(row => row.split('').map(c => c === 'X' ? 1 : 0));
+    oStartR = Math.floor((ROWS - outlineMatrix.length) / 2);
+    oStartC = Math.floor((COLS - outlineMatrix[0].length) / 2);
+    
+    elOutlineBadge.classList.remove('hide');
+    document.getElementById('outline-badge-text').textContent = `「${config.name}」外框輔助中`;
+  } else {
+    elOutlineBadge.classList.add('hide');
+  }
+
+  // Board setup
+  elMainBoard.style.gridTemplateRows = `repeat(${ROWS}, minmax(0, 1fr))`;
+  elMainBoard.style.gridTemplateColumns = `repeat(${COLS}, minmax(0, 1fr))`;
+  elMainBoard.innerHTML = '';
+  
+  let isValidActive = activePiece ? checkValidPosition(activePiece, b) : true;
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-9 lg:h-9 board-cell rounded-sm flex-shrink-0 relative';
+      
+      let isOutline = false;
+      if (outlineMatrix && r >= oStartR && r < oStartR + outlineMatrix.length && c >= oStartC && c < oStartC + outlineMatrix[0].length) {
+         if (outlineMatrix[r - oStartR][c - oStartC]) isOutline = true;
+      }
+
+      if (isOutline) {
+         cell.classList.add('border-2', 'border-purple-300', 'border-dashed', 'bg-blue-50/50');
+      } else {
+         cell.classList.add('hover:bg-slate-200/50', 'bg-transparent');
+      }
+
+      let isActiveCell = false;
+      if (activePiece) {
+        const rA = r - activePiece.r;
+        const cA = c - activePiece.c;
+        if (rA >= 0 && rA < activePiece.matrix.length && cA >= 0 && cA < activePiece.matrix[0].length && activePiece.matrix[rA][cA]) {
+          isActiveCell = true;
+        }
+      }
+
+      if (isActiveCell) {
+        cell.className = 'w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-9 lg:h-9 board-cell rounded-sm flex-shrink-0 active-piece-cell ' + (isValidActive ? PENTOMINOES[activePiece.type].color : 'invalid-cell');
+      } else if (b[r][c]) {
+        cell.className = 'w-5 h-5 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-9 lg:h-9 board-cell rounded-sm flex-shrink-0 placed-piece-cell shadow-sm ' + PENTOMINOES[b[r][c].type].color;
+        cell.dataset.r = r; cell.dataset.c = c;
+      }
+      elMainBoard.appendChild(cell);
+    }
+  }
+
+  // Toolbar
+  if (activePiece && !isModalOpen) {
+    elFloatingToolbar.classList.remove('hide');
+    const pctLeft = ((activePiece.c + activePiece.matrix[0].length / 2) / COLS) * 100;
+    let pctTop = (activePiece.r / ROWS > 0.7) ? (activePiece.r / ROWS) * 100 : ((activePiece.r + activePiece.matrix.length) / ROWS) * 100;
+    let transformStr = (activePiece.r / ROWS > 0.7) ? 'translate(-50%, calc(-100% - 12px))' : 'translate(-50%, 12px)';
+    
+    elFloatingToolbar.style.left = `${pctLeft}%`;
+    elFloatingToolbar.style.top = `${pctTop}%`;
+    elFloatingToolbar.style.transform = transformStr;
+    elFloatingToolbar.querySelector('#tb-confirm').disabled = !isValidActive;
+    if(isValidActive) {
+      elFloatingToolbar.querySelector('#tb-confirm').classList.remove('opacity-30', 'text-slate-400');
+    } else {
+      elFloatingToolbar.querySelector('#tb-confirm').classList.add('opacity-30', 'text-slate-400');
+    }
+  } else {
+    elFloatingToolbar.classList.add('hide');
+  }
+
+  // Inventory
+  elInventoryGrid.innerHTML = '';
+  availableTypes.forEach(type => {
+    const isHighlighted = activeOutlinePieces.includes(type);
+    const btn = document.createElement('button');
+    let btnClasses = 'aspect-square rounded-2xl flex items-center justify-center transition-all duration-200 shadow-sm relative ';
+    
+    if (isHighlighted) {
+      btnClasses += 'bg-amber-50 border-[3px] border-amber-400 shadow-amber-200 scale-[1.02] ';
+    } else {
+      btnClasses += 'bg-slate-50 border-2 border-slate-100 hover:bg-blue-50 hover:border-blue-300 hover:scale-[1.05] ';
+    }
+    btn.className = btnClasses;
+    btn.onclick = () => handleInventoryClick(type);
+    
+    if (isHighlighted) {
+      const badge = document.createElement('div');
+      badge.className = 'absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-sm z-10 flex items-center gap-0.5';
+      badge.innerHTML = '<i class="ph-fill ph-star"></i> 推薦';
+      btn.appendChild(badge);
+    }
+    
+    const mat = PENTOMINOES[type].matrix;
+    const mini = document.createElement('div');
+    mini.className = 'grid gap-[2px] scale-50';
+    mini.style.gridTemplateRows = `repeat(${mat.length}, 14px)`;
+    mini.style.gridTemplateColumns = `repeat(${mat[0].length}, 14px)`;
+    mat.forEach(row => {
+      row.forEach(val => {
+        const d = document.createElement('div');
+        d.className = `w-full h-full rounded-[1px] ${val ? PENTOMINOES[type].color : 'bg-transparent'}`;
+        mini.appendChild(d);
+      });
+    });
+    btn.appendChild(mini);
+    elInventoryGrid.appendChild(btn);
+  });
+
+  elInventoryOverlay.classList.toggle('hide', !activePiece);
+  
+  // Stats
+  elPlacedCount.textContent = placedPieces.length;
+  elTargetCount.textContent = lvl.target;
+  document.getElementById('gallery-count').textContent = (solutions[currentLevelKey] || []).length;
+  
+  updateStatusBadge();
+  checkTargetReached();
+}
+
+function rotateMatrix(m) {
+  const r = m.length, c = m[0].length;
+  const n = Array.from({length:c}, () => Array(r).fill(0));
+  for(let i=0; i<r; i++) for(let j=0; j<c; j++) n[j][r-1-i] = m[i][j];
+  return n;
+}
+function constrainPiece(r, c, m) {
+  return { r: Math.max(0, Math.min(r, ROWS - m.length)), c: Math.max(0, Math.min(c, COLS - m[0].length)) };
+}
+function checkValidPosition(piece, b) {
+  if (!piece) return false;
+  for (let r = 0; r < piece.matrix.length; r++) {
+    for (let c = 0; c < piece.matrix[r].length; c++) {
+      if (piece.matrix[r][c]) {
+        const br = piece.r + r, bc = piece.c + c;
+        if (br < 0 || br >= ROWS || bc < 0 || bc >= COLS) return false;
+        if (b[br][bc] !== null) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function handleRotate() {
+  if (!activePiece) return;
+  const newM = rotateMatrix(activePiece.matrix);
+  const p = constrainPiece(activePiece.r, activePiece.c, newM);
+  activePiece.matrix = newM; activePiece.r = p.r; activePiece.c = p.c;
+  render();
+}
+function handleFlip() {
+  if (!activePiece) return;
+  const newM = activePiece.matrix.map(r => [...r].reverse());
+  const p = constrainPiece(activePiece.r, activePiece.c, newM);
+  activePiece.matrix = newM; activePiece.r = p.r; activePiece.c = p.c;
+  render();
+}
+function handleMove(dr, dc) {
+  if (!activePiece) return;
+  const p = constrainPiece(activePiece.r + dr, activePiece.c + dc, activePiece.matrix);
+  activePiece.r = p.r; activePiece.c = p.c;
+  render();
+}
+function handleConfirm() {
+  if (activePiece && checkValidPosition(activePiece, getBoardMatrix())) {
+    placedPieces.push(activePiece);
+    activePiece = null;
+    render();
+  }
+}
+function handleCancel() { activePiece = null; render(); }
+
+function handleInventoryClick(type) {
+  if (activePiece && checkValidPosition(activePiece, getBoardMatrix())) placedPieces.push(activePiece);
+  const m = PENTOMINOES[type].matrix;
+  activePiece = {
+    id: Date.now().toString(), type, matrix: m,
+    ...constrainPiece(Math.floor((ROWS - m.length)/2), Math.floor((COLS - m[0].length)/2), m)
+  };
+  render();
+}
+
+function handleBoardPointerDown(e) {
+  if(isModalOpen) return;
+  const rect = elMainBoard.getBoundingClientRect();
+  const cw = rect.width / COLS, ch = rect.height / ROWS;
+  const c = Math.floor((e.clientX - rect.left) / cw);
+  const r = Math.floor((e.clientY - rect.top) / ch);
+
+  let clickedActive = false;
+  if(activePiece) {
+    const ar = r - activePiece.r, ac = c - activePiece.c;
+    if(ar>=0 && ar<activePiece.matrix.length && ac>=0 && ac<activePiece.matrix[0].length && activePiece.matrix[ar][ac]) clickedActive = true;
+  }
+
+  if(clickedActive) {
+    dragCtx = { id: e.pointerId, sx: e.clientX, sy: e.clientY, sr: activePiece.r, sc: activePiece.c, cw, ch };
+    elMainBoard.setPointerCapture(e.pointerId);
+  } else {
+    if(activePiece) {
+      if(checkValidPosition(activePiece, getBoardMatrix())) placedPieces.push(activePiece);
+      activePiece = null;
+    }
+    const b = getBoardMatrix();
+    if(b[r] && b[r][c] && (!activePiece || checkValidPosition(activePiece, b))) {
+      const p = b[r][c];
+      placedPieces = placedPieces.filter(x => x.id !== p.id);
+      activePiece = p;
+    }
+    render();
+  }
+}
+function handleBoardPointerMove(e) {
+  if(dragCtx && dragCtx.id === e.pointerId && activePiece) {
+    const dr = Math.round((e.clientY - dragCtx.sy)/dragCtx.ch);
+    const dc = Math.round((e.clientX - dragCtx.sx)/dragCtx.cw);
+    const p = constrainPiece(dragCtx.sr + dr, dragCtx.sc + dc, activePiece.matrix);
+    activePiece.r = p.r; activePiece.c = p.c;
+    render();
+  }
+}
+function handleBoardPointerUp(e) {
+  if(dragCtx && dragCtx.id === e.pointerId) {
+    elMainBoard.releasePointerCapture(e.pointerId);
+    dragCtx = null;
+  }
+}
+function handleKeyDown(e) {
+  if(!activePiece || isModalOpen) return;
+  let h = true;
+  switch(e.key.toLowerCase()) {
+    case 'r': handleRotate(); break;
+    case 'f': handleFlip(); break;
+    case 'enter': case ' ': handleConfirm(); break;
+    case 'escape': handleCancel(); break;
+    case 'arrowup': case 'w': handleMove(-1,0); break;
+    case 'arrowdown': case 's': handleMove(1,0); break;
+    case 'arrowleft': case 'a': handleMove(0,-1); break;
+    case 'arrowright': case 'd': handleMove(0,1); break;
+    default: h = false;
+  }
+  if(h) e.preventDefault();
+}
+
+function resetBoard() {
+  placedPieces = [];
+  activePiece = null;
+  closeModal();
+  render();
+}
+function closeModal() {
+  isModalOpen = false;
+  elResultModal.classList.add('hide');
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast-msg');
+  document.getElementById('toast-text').textContent = msg;
+  t.className = `absolute bottom-6 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl font-bold text-sm transition-all duration-300 z-50 flex items-center gap-2 ${isError ? 'bg-red-600 text-white' : 'bg-slate-800 text-white'}`;
+  t.classList.remove('opacity-0', 'translate-y-4');
+  if(toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    t.classList.add('opacity-0', 'translate-y-4');
+  }, 3000);
+}
+
+function updateStatusBadge() {
+  const lvl = LEVELS[currentLevelKey];
+  if (placedPieces.length === lvl.target) {
+     elStatusBadge.innerHTML = '<i class="ph-fill ph-check-circle text-green-500"></i> <span class="text-green-700">區塊判定中</span>';
+     elStatusBadge.className = 'px-4 py-2 bg-green-50 text-green-700 rounded-xl font-bold text-sm flex items-center gap-2 border border-green-200';
+  } else {
+     elStatusBadge.innerHTML = '探索中...';
+     elStatusBadge.className = 'px-4 py-2 bg-slate-100 text-slate-500 rounded-xl font-bold text-sm flex items-center gap-2 border border-slate-200';
+  }
+}
+
+function checkConnectivity(b) {
+  let startNode = null;
+  let totalBlocks = 0;
+  for(let r=0; r<ROWS; r++) {
+    for(let c=0; c<COLS; c++) {
+      if(b[r][c]) { totalBlocks++; if(!startNode) startNode = {r,c}; }
+    }
+  }
+  if(totalBlocks === 0) return false;
+  let visited = new Set();
+  let q = [startNode];
+  visited.add(`${startNode.r},${startNode.c}`);
+  let count = 0;
+  while(q.length > 0) {
+    let curr = q.shift();
+    count++;
+    [[0,1],[1,0],[0,-1],[-1,0]].forEach(([dr,dc]) => {
+      let nr=curr.r+dr, nc=curr.c+dc;
+      if(nr>=0 && nr<ROWS && nc>=0 && nc<COLS && b[nr][nc] && !visited.has(`${nr},${nc}`)) {
+        visited.add(`${nr},${nc}`);
+        q.push({r:nr, c:nc});
+      }
+    });
+  }
+  return count === totalBlocks;
+}
+
+function detectSymmetry() {
+  const b = getBoardMatrix();
+  if(!checkConnectivity(b)) return { symType: null, error: '圖案未完全相連（邊對邊連接）' };
+  
+  let minR=ROWS, maxR=-1, minC=COLS, maxC=-1;
+  for(let r=0; r<ROWS; r++) {
+    for(let c=0; c<COLS; c++) {
+      if(b[r][c]) {
+        minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+        minC = Math.min(minC, c); maxC = Math.max(maxC, c);
+      }
+    }
+  }
+  
+  const h = maxR - minR + 1, w = maxC - minC + 1;
+  const mat = Array.from({length:h}, ()=>Array(w).fill(0));
+  for(let r=0; r<h; r++) for(let c=0; c<w; c++) if(b[minR+r][minC+c]) mat[r][c] = 1;
+  
+  const isH = mat.every((row, r) => row.every((val, c) => val === mat[h-1-r][c]));
+  const isV = mat.every((row) => row.every((val, c) => val === row[w-1-c]));
+  
+  let isD1=false, isD2=false, isRot90=false;
+  if(h === w) {
+    isD1 = mat.every((row, r) => row.every((val, c) => val === mat[c][r]));
+    isD2 = mat.every((row, r) => row.every((val, c) => val === mat[h-1-c][w-1-r]));
+    isRot90 = mat.every((row, r) => row.every((val, c) => val === mat[h-1-c][r]));
+  }
+  const isRot180 = mat.every((row, r) => row.every((val, c) => val === mat[h-1-r][w-1-c]));
+  
+  if (isRot90 && isH) return { symType: '完美高度對稱 (點與軸對稱)', mat };
+  if (isRot90) return { symType: '90° 旋轉對稱', mat };
+  if (isH && isV) return { symType: '水平與垂直雙軸對稱', mat };
+  if (isD1 && isD2) return { symType: '雙對角線對稱', mat };
+  if (isH) return { symType: '水平軸對稱', mat };
+  if (isV) return { symType: '垂直軸對稱', mat };
+  if (isD1 || isD2) return { symType: '對角線對稱', mat };
+  if (isRot180) return { symType: '180° 中心對稱', mat };
+  
+  return { symType: null, error: '圖形不具備對稱性' };
+}
+
+function getCanonicalHash(m) {
+  const syms = [];
+  let cur = m;
+  for(let i=0; i<4; i++) {
+    syms.push(cur.map(r=>r.join('')).join('|'));
+    syms.push(cur.map(r=>[...r].reverse().join('')).join('|'));
+    const rows=cur.length, cols=cur[0].length;
+    const rot = Array.from({length:cols},()=>Array(rows).fill(null));
+    for(let r=0; r<rows; r++) for(let c=0; c<cols; c++) rot[c][rows-1-r] = cur[r][c];
+    cur = rot;
+  }
+  syms.sort(); return syms[0];
+}
+
+function checkTargetReached() {
+  const lvl = LEVELS[currentLevelKey];
+  if (placedPieces.length === lvl.target && !activePiece) {
+    const { symType, error, mat } = detectSymmetry();
+    if (symType) {
+      const b = getBoardMatrix();
+      const typeBoard = [];
+      let minR=ROWS, maxR=-1, minC=COLS, maxC=-1;
+      for(let r=0; r<ROWS; r++) {
+        for(let c=0; c<COLS; c++) {
+          if(b[r][c]) { minR=Math.min(minR,r); maxR=Math.max(maxR,r); minC=Math.min(minC,c); maxC=Math.max(maxC,c); }
+        }
+      }
+      for(let r=minR; r<=maxR; r++) {
+        let row = [];
+        for(let c=minC; c<=maxC; c++) row.push(b[r][c] ? b[r][c].type : '-');
+        typeBoard.push(row);
+      }
+      
+      const hash = getCanonicalHash(typeBoard);
+      const sols = solutions[currentLevelKey] || [];
+      
+      if (!sols.some(s => s.hash === hash)) {
+        solutions[currentLevelKey] = [...sols, {hash, matrix: typeBoard, symType}];
+        showSuccessModal(symType, true);
+      } else {
+        showToast('哎呀，這個圖案（包含旋轉翻轉）已經收集過了喔！', true);
+      }
+    } else {
+      showToast(error, true);
+    }
+  }
+}
+
+function showSuccessModal(symType, isNew) {
+  isModalOpen = true;
+  elResultModal.classList.remove('hide');
+  document.getElementById('sym-type-text').textContent = symType;
+}
+
+function factorial(n) { return n <= 1 ? 1 : n * factorial(n - 1); }
+function C(n, k) { return factorial(n) / (factorial(k) * factorial(n - k)); }
+
+function openMathModal() {
+  const tbody = document.getElementById('math-table-body');
+  tbody.innerHTML = '';
+  let totalFound = 0;
+  
+  for(let i=2; i<=12; i++) {
+    const combos = C(12, i);
+    const foundCount = (solutions[i.toString()] || []).length;
+    totalFound += foundCount;
+    
+    const isCurrent = i.toString() === currentLevelKey;
+    const tr = document.createElement('tr');
+    tr.className = `border-b border-slate-100 transition-colors ${isCurrent ? 'bg-blue-50/60' : 'hover:bg-slate-50'}`;
+    
+    tr.innerHTML = `
+      <td class="px-4 py-2 text-center font-bold ${isCurrent ? 'text-blue-600' : ''}">${i} 塊</td>
+      <td class="px-4 py-2 text-center font-mono text-slate-400">C(12, ${i})</td>
+      <td class="px-4 py-2 text-center font-bold text-slate-700">${combos.toLocaleString()}</td>
+      <td class="px-4 py-2 text-center font-black border-l border-slate-100 ${foundCount > 0 ? 'text-purple-600 text-base' : 'text-slate-300'}">${foundCount}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  document.getElementById('total-found-count').textContent = totalFound;
+  document.getElementById('math-modal').classList.remove('hide');
+}
+
+function loadOutline(key, piecesStr) {
+  if (OUTLINES_CONFIG[key]) {
+    activeOutlineKey = key;
+    activeOutlinePieces = piecesStr ? piecesStr.split(',') : [];
+    elHintModal.classList.add('hide');
+    showToast(`已載入「${OUTLINES_CONFIG[key].name}」輔助線，可按圖索驥囉！`);
+    render();
+  }
+}
+
+function openHintModal() {
+  const hintTextEl = document.getElementById('hint-text');
+  hintTextEl.className = "w-full mb-6";
+  
+  let hints = [];
+  switch(currentLevelKey) {
+    case '2':
+      hints = [
+        { text: "這兩塊可以互補嵌合，能拼出一個 2x5 的完美矩形：【P】 與 【N】", outlineKey: "2_1", pieces: "P,N" },
+        { text: "根據筆記，它們能拼出一個對稱的梯形或屋頂形狀：【L】 與 【Y】", outlineKey: "2_2", pieces: "L,Y" },
+        { text: "利用十字凹槽，把它們互相卡進去，能構成對稱十字：【F】 與 【X】", outlineKey: "2_3", pieces: "F,X" }
+      ]; break;
+    case '3':
+      hints = [
+        { text: "使用【I】、【U】、【T】疊加，鑄造出對稱的王者寶劍！", outlineKey: "3_1", pieces: "I,U,T" },
+        { text: "將【P】、【T】、【W】三塊巧妙組合，拼出完美對稱的寶石形狀！", outlineKey: "3_2", pieces: "P,T,W" },
+        { text: "用【I】、【X】、【U】三塊排列，打造對稱的魔法權杖！", outlineKey: "3_3", pieces: "I,X,U" }
+      ]; break;
+    case '4':
+      hints = [
+        { text: "全對稱陣容！使用【I】、【X】、【T】、【U】疊加構成神聖巨劍！", outlineKey: "4_1", pieces: "I,X,T,U" },
+        { text: "換個順序！使用【U】、【I】、【X】、【T】排列構成守衛塔！", outlineKey: "4_2", pieces: "U,I,X,T" },
+        { text: "再次重組！使用【T】、【X】、【U】、【I】堆疊成莊嚴的祭司杖！", outlineKey: "4_3", pieces: "T,X,U,I" }
+      ]; break;
+    case '5':
+      hints = [
+        { text: "經典 5x5 正方形配方 A：【L】, 【W】, 【P】, 【I】, 【Y】", outlineKey: "5_1", pieces: "L,W,P,I,Y" },
+        { text: "經典 5x5 正方形配方 B：【Z】, 【U】, 【Y】, 【F】, 【L】", outlineKey: "5_1", pieces: "Z,U,Y,F,L" },
+        { text: "經典 5x5 正方形配方 C：【Z】, 【U】, 【V】, 【N】, 【L】", outlineKey: "5_1", pieces: "Z,U,V,N,L" }
+      ]; break;
+    case '6':
+      hints = [
+        { text: "5x6 矩形：在 5x5 正方形完美配方旁加上一條直線：【Z】, 【U】, 【Y】, 【F】, 【L】 + 【I】", outlineKey: "6_1", pieces: "Z,U,Y,F,L,I" },
+        { text: "提籃正方：在 5x5 基底加上對稱提把：【L】, 【W】, 【P】, 【I】, 【Y】 + 【U】", outlineKey: "6_2", pieces: "L,W,P,I,Y,U" },
+        { text: "天線正方：在 5x5 基底加上對稱天線：【Z】, 【U】, 【V】, 【N】, 【L】 + 【T】", outlineKey: "6_3", pieces: "Z,U,V,N,L,T" }
+      ]; break;
+    case '7':
+      hints = [
+        { text: "王者皇冠：以 5x5 基底 (【Z】, 【U】, 【V】, 【N】, 【L】)，頂部加【I】，底部加【T】", outlineKey: "7_1", pieces: "Z,U,V,N,L,I,T" },
+        { text: "對稱魔法陣：以 5x5 基底 (【Z】, 【U】, 【V】, 【N】, 【L】)，頂部加【X】，底部加【I】", outlineKey: "7_2", pieces: "Z,U,V,N,L,X,I" },
+        { text: "獎盃：以 5x5 基底 (【L】, 【W】, 【P】, 【I】, 【Y】)，頂部加【T】，底部加【U】", outlineKey: "7_3", pieces: "L,W,P,I,Y,T,U" }
+      ]; break;
+    case '8':
+      hints = [
+        { text: "對稱神殿：將 5x5 核心 (【L】,【W】,【P】,【Y】,【F】) 加上【I】、【T】、【U】進行對稱延伸", outlineKey: "8_1", pieces: "L,W,P,Y,F,I,T,U" },
+        { text: "4x10 矩形：試著用這 8 塊拼滿 4x10 的長方形區域：【I】,【L】,【P】,【Y】,【N】,【U】,【V】,【Z】", outlineKey: "8_2", pieces: "I,L,P,Y,N,U,V,Z" },
+        { text: "蝙蝠展翼：使用【I】,【L】,【X】,【Y】,【Z】,【W】,【P】,【N】拼出展翼圖案", outlineKey: "8_3", pieces: "I,L,X,Y,Z,W,P,N" }
+      ]; break;
+    case '9':
+      hints = [
+        { text: "5x9 矩形：這 9 塊零件可以拼出完美對稱矩形：【I】,【L】,【P】,【T】,【U】,【V】,【W】,【Y】,【Z】", outlineKey: "9_1", pieces: "I,L,P,T,U,V,W,Y,Z" },
+        { text: "巨大十字星：用這 9 塊拼出一個巨大十字型：【F】,【I】,【L】,【P】,【T】,【U】,【V】,【W】,【X】", outlineKey: "9_2", pieces: "F,I,L,P,T,U,V,W,X" },
+        { text: "超長條形：挑戰 3x15 的超細長對稱矩形！使用：【I】,【L】,【N】,【P】,【U】,【V】,【W】,【Y】,【Z】", outlineKey: "9_3", pieces: "I,L,N,P,U,V,W,Y,Z" }
+      ]; break;
+    case '10':
+      hints = [
+        { text: "挑戰 5x10 矩形：排除【X】與【W】，剩下的 10 塊能拼出經典長方形！", outlineKey: "10_1", pieces: "I,L,T,P,U,Z,N,Y,V,F" },
+        { text: "圓角厚矩形：排除【I】與【X】，拼出一個類似倒角正方形的厚實對稱塊", outlineKey: "10_2", pieces: "L,T,P,U,Z,N,Y,W,V,F" },
+        { text: "直立長方：挑戰把排除【U】與【X】的 10 塊拼成直立的 10x5", outlineKey: "10_3", pieces: "I,L,T,P,Z,N,Y,W,V,F" }
+      ]; break;
+    case '11':
+      hints = [
+        { text: "挑戰 5x11 矩形：只排除【X】，剩下的就能拼出完美對稱矩形！", outlineKey: "11_1", pieces: "I,L,T,P,U,Z,N,Y,W,V,F" },
+        { text: "直立 11x5：轉個方向，排除【W】，拼出直立 11x5 矩形", outlineKey: "11_2", pieces: "I,L,T,P,U,Z,N,Y,X,V,F" },
+        { text: "平頂金字塔：排除【I】，這 11 塊可以拼出穩固的階梯平頂金字塔喔", outlineKey: "11_3", pieces: "L,T,P,U,Z,N,Y,X,W,V,F" }
+      ]; break;
+    case '12':
+      hints = [
+        { text: "極限矩形挑戰 5x12：使用全部 12 塊，拼出 5x12 完美對稱矩形！", outlineKey: "12_1", pieces: "I,L,T,P,U,Z,N,Y,X,W,V,F" },
+        { text: "中空回字圖形：使用全部 12 塊，嘗試拼出一個正中間挖空 2x2 的 8x8 對稱圖形！", outlineKey: "12_2", pieces: "I,L,T,P,U,Z,N,Y,X,W,V,F" },
+        { text: "極限矩形挑戰 6x10：使用全部 12 塊，拼出 6x10 的經典版型！", outlineKey: "12_3", pieces: "I,L,T,P,U,Z,N,Y,X,W,V,F" }
+      ]; break;
+    default: hints = [];
+  }
+
+  const formatHint = (text) => {
+    const colors = {
+      'I': 'bg-red-500', 'L': 'bg-sky-400', 'T': 'bg-pink-500', 'P': 'bg-purple-500',
+      'U': 'bg-cyan-500', 'Z': 'bg-orange-500', 'N': 'bg-amber-400', 'Y': 'bg-green-500',
+      'X': 'bg-blue-600', 'W': 'bg-rose-400', 'V': 'bg-teal-400', 'F': 'bg-yellow-400'
+    };
+    return text.replace(/【([A-Z])】/g, (match, p1) => `<span class="inline-block ${colors[p1]} text-white font-black px-1.5 py-0.5 rounded text-sm shadow-sm mx-0.5">${p1}</span>`);
+  };
+
+  let htmlString = '<div class="flex flex-col gap-3 text-left w-full">';
+  hints.forEach((hint, index) => {
+    const piecesParam = hint.pieces ? `,'${hint.pieces}'` : ",''";
+    const buttonHtml = hint.outlineKey 
+      ? `<button onclick="loadOutline('${hint.outlineKey}'${piecesParam})" class="mt-2.5 flex items-center justify-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm transition-colors w-full"><i class="ph ph-layout-fill"></i> 💡 載入對稱外框輔助線（按圖索驥）</button>`
+      : '';
+
+    htmlString += `
+      <div class="bg-amber-50 p-3.5 rounded-xl border border-amber-200 shadow-sm transition-transform hover:-translate-y-0.5">
+        <div class="text-[10px] font-black text-amber-600 bg-amber-200 inline-block px-2 py-0.5 rounded-full mb-1">解法靈感 ${index + 1}</div>
+        <div class="text-sm text-slate-700 leading-relaxed font-bold">${formatHint(hint.text)}</div>
+        ${buttonHtml}
+      </div>`;
+  });
+  htmlString += '</div>';
+  hintTextEl.innerHTML = htmlString;
+  elHintModal.classList.remove('hide');
+}
+
+function openGallery() {
+  const sols = solutions[currentLevelKey] || [];
+  document.getElementById('gallery-title').textContent = `${LEVELS[currentLevelKey].label} - 幾何圖鑑`;
+  const cont = document.getElementById('gallery-content');
+  cont.innerHTML = '';
+  
+  if(sols.length === 0) {
+    cont.innerHTML = `
+      <div class="h-64 flex flex-col items-center justify-center text-slate-400">
+        <i class="ph-fill ph-shapes text-6xl mb-4 opacity-20"></i>
+        <p class="font-bold text-lg">尚未發現任何對稱圖形</p>
+        <p class="text-sm mt-1">發揮創意，在畫布上拼疊看看吧！</p>
+      </div>`;
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 pb-8';
+    
+    sols.forEach((sol, i) => {
+      const card = document.createElement('div');
+      card.className = 'flex flex-col items-center bg-white p-4 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow group cursor-default';
+      
+      const badge = document.createElement('div');
+      badge.className = 'w-full flex justify-between items-start mb-3';
+      badge.innerHTML = `<span class="text-xs font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-lg">#${i+1}</span>
+                         <span class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100 text-right max-w-[120px] leading-tight">${sol.symType}</span>`;
+      card.appendChild(badge);
+
+      const matWrap = document.createElement('div');
+      matWrap.className = 'flex-grow flex items-center justify-center min-h-[100px] w-full';
+      
+      const mat = document.createElement('div');
+      mat.className = 'grid gap-[1px] group-hover:scale-105 transition-transform duration-300';
+      
+      // Auto-scaling thumbnails based on grid dimensions
+      const rows = sol.matrix.length;
+      const cols = sol.matrix[0].length;
+      const maxDim = Math.max(rows, cols);
+      let cellSize = '12px';
+      if (maxDim > 12) cellSize = '8px';
+      else if (maxDim > 8) cellSize = '10px';
+
+      mat.style.gridTemplateRows = `repeat(${rows}, ${cellSize})`;
+      mat.style.gridTemplateColumns = `repeat(${cols}, ${cellSize})`;
+      
+      sol.matrix.forEach(row => {
+        row.forEach(cell => {
+          const d = document.createElement('div');
+          d.className = `w-full h-full rounded-[1px] ${cell !== '-' ? PENTOMINOES[cell].color : 'bg-transparent'}`;
+          mat.appendChild(d);
+        });
+      });
+      
+      matWrap.appendChild(mat);
+      card.appendChild(matWrap);
+      grid.appendChild(card);
+    });
+    cont.appendChild(grid);
+  }
+  elGalleryModal.classList.remove('hide');
+}
+
+init();
+</script>
+</body>
+</html>

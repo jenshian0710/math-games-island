@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>旋風魔方陣 - 教學優化版</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        /* 解除防回彈與強制鎖定，恢復正常網頁上下滑動功能 */
+        html, body { margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; }
+        
+        .domino-card { transition: all 0.2s ease; cursor: grab; }
+        .domino-card:active { cursor: grabbing; transform: scale(0.95); }
+        .domino-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .victory-panel { animation: slideDown 0.4s ease forwards; }
+
+        /* 漸進式回饋光暈 */
+        .glow-green { box-shadow: 0 0 12px 4px rgba(34, 197, 94, 0.6); border-color: #22c55e !important; z-index: 5; position: relative; }
+        @keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 15px 5px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        .glow-red { border-color: #ef4444 !important; animation: pulse-red 1.5s infinite; z-index: 5; background-color: rgba(254, 226, 226, 0.2) !important; position: relative; }
+
+        .dragging { opacity: 0.5; transform: scale(0.95); }
+        .drag-over { border-color: #3b82f6 !important; background-color: #eff6ff !important; transform: scale(1.05); transition: all 0.2s; z-index: 10; position: relative; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        const LEVEL_CONFIGS = {
+            1: {
+                name: "一階基礎九宮格", desc: "經典的單一九宮格，需要 4 張骨牌。各邊和必須等於 N。", gridSizeClass: "grid-cols-3 grid-rows-3", gridStyle: { aspectRatio: '1/1', width: '100%', maxWidth: '300px' },
+                slots: [
+                    { id: "top", r: "row-start-1 col-start-1 col-span-2", isV: false, pptX: 1, pptY: 1 },
+                    { id: "right", r: "row-start-1 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 1 },
+                    { id: "bottom", r: "row-start-3 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 3 },
+                    { id: "left", r: "row-start-2 row-span-2 col-start-1", isV: true, pptX: 1, pptY: 2 }
+                ],
+                centers: [{ label: "中央", r: "row-start-2 col-start-2", color: "bg-amber-100 text-amber-800", pptX: 2, pptY: 2 }],
+                matrices: [{ id: "A", name: "中央方陣", top: "top", right: "right", bottom: "bottom", left: "left" }]
+            },
+            2: {
+                name: "二階雙連方陣", desc: "兩個九宮格呈階梯狀斜向排列，共用中間的垂直骨牌。", gridSizeClass: "grid-cols-5 grid-rows-4", gridStyle: { aspectRatio: '5/4', width: '100%', maxWidth: '420px' },
+                slots: [
+                    { id: "L_left", r: "row-start-3 row-span-2 col-start-1", isV: true, pptX: 1, pptY: 3 },
+                    { id: "L_top", r: "row-start-2 col-start-1 col-span-2", isV: false, pptX: 1, pptY: 2 },
+                    { id: "L_bottom", r: "row-start-4 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 4 },
+                    { id: "shared_mid", r: "row-start-2 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 2 },
+                    { id: "R_top", r: "row-start-1 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 1 },
+                    { id: "R_right", r: "row-start-1 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 1 },
+                    { id: "R_bottom", r: "row-start-3 col-start-4 col-span-2", isV: false, pptX: 4, pptY: 3 }
+                ],
+                centers: [{ label: "左下", r: "row-start-3 col-start-2", color: "bg-orange-100 text-orange-900", pptX: 2, pptY: 3 }, { label: "右上", r: "row-start-2 col-start-4", color: "bg-yellow-100 text-yellow-900", pptX: 4, pptY: 2 }],
+                matrices: [
+                    { id: "L", name: "左下方陣", top: "L_top", right: "shared_mid", bottom: "L_bottom", left: "L_left" },
+                    { id: "R", name: "右上方陣", top: "R_top", right: "R_right", bottom: "R_bottom", left: "shared_mid" }
+                ]
+            },
+            3: {
+                name: "三階三連方陣", desc: "三個九宮格斜向階梯排列，共享兩個交界處。難度極高！", gridSizeClass: "grid-cols-7 grid-rows-5", gridStyle: { aspectRatio: '7/5', width: '100%', maxWidth: '560px' },
+                slots: [
+                    { id: "A_left", r: "row-start-4 row-span-2 col-start-1", isV: true, pptX: 1, pptY: 4 },
+                    { id: "A_top", r: "row-start-3 col-start-1 col-span-2", isV: false, pptX: 1, pptY: 3 },
+                    { id: "A_bottom", r: "row-start-5 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 5 },
+                    { id: "shared_AB", r: "row-start-3 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 3 },
+                    { id: "B_top", r: "row-start-2 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 2 },
+                    { id: "B_bottom", r: "row-start-4 col-start-4 col-span-2", isV: false, pptX: 4, pptY: 4 },
+                    { id: "shared_BC", r: "row-start-2 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 2 },
+                    { id: "C_top", r: "row-start-1 col-start-5 col-span-2", isV: false, pptX: 5, pptY: 1 },
+                    { id: "C_right", r: "row-start-1 row-span-2 col-start-7", isV: true, pptX: 7, pptY: 1 },
+                    { id: "C_bottom", r: "row-start-3 col-start-6 col-span-2", isV: false, pptX: 6, pptY: 3 }
+                ],
+                centers: [{ label: "左下", r: "row-start-4 col-start-2", color: "bg-orange-100 text-orange-900", pptX: 2, pptY: 4 }, { label: "中央", r: "row-start-3 col-start-4", color: "bg-amber-100 text-amber-900", pptX: 4, pptY: 3 }, { label: "右上", r: "row-start-2 col-start-6", color: "bg-yellow-100 text-yellow-900", pptX: 6, pptY: 2 }],
+                matrices: [
+                    { id: "A", name: "左下方陣", top: "A_top", right: "shared_AB", bottom: "A_bottom", left: "A_left" },
+                    { id: "B", name: "中央方陣", top: "B_top", right: "shared_BC", bottom: "B_bottom", left: "shared_AB" },
+                    { id: "C", name: "右上方陣", top: "C_top", right: "C_right", bottom: "C_bottom", left: "shared_BC" }
+                ]
+            },
+            4: {
+                name: "四階四連方陣", desc: "四個九宮格呈斜向階梯排列，考驗大局觀！", gridSizeClass: "grid-cols-9 grid-rows-6", gridStyle: { aspectRatio: '3/2', width: '100%', maxWidth: '720px' },
+                slots: [
+                    { id: "A_left", r: "row-start-5 row-span-2 col-start-1", isV: true, pptX: 1, pptY: 5 },
+                    { id: "A_top", r: "row-start-4 col-start-1 col-span-2", isV: false, pptX: 1, pptY: 4 },
+                    { id: "A_bottom", r: "row-start-6 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 6 },
+                    { id: "shared_AB", r: "row-start-4 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 4 },
+                    { id: "B_top", r: "row-start-3 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 3 },
+                    { id: "B_bottom", r: "row-start-5 col-start-4 col-span-2", isV: false, pptX: 4, pptY: 5 },
+                    { id: "shared_BC", r: "row-start-3 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 3 },
+                    { id: "C_top", r: "row-start-2 col-start-5 col-span-2", isV: false, pptX: 5, pptY: 2 },
+                    { id: "C_bottom", r: "row-start-4 col-start-6 col-span-2", isV: false, pptX: 6, pptY: 4 },
+                    { id: "shared_CD", r: "row-start-2 row-span-2 col-start-7", isV: true, pptX: 7, pptY: 2 },
+                    { id: "D_top", r: "row-start-1 col-start-7 col-span-2", isV: false, pptX: 7, pptY: 1 },
+                    { id: "D_right", r: "row-start-1 row-span-2 col-start-9", isV: true, pptX: 9, pptY: 1 },
+                    { id: "D_bottom", r: "row-start-3 col-start-8 col-span-2", isV: false, pptX: 8, pptY: 3 }
+                ],
+                centers: [{ label: "左下", r: "row-start-5 col-start-2", color: "bg-orange-100 text-orange-900", pptX: 2, pptY: 5 }, { label: "中下", r: "row-start-4 col-start-4", color: "bg-amber-100 text-amber-900", pptX: 4, pptY: 4 }, { label: "中上", r: "row-start-3 col-start-6", color: "bg-yellow-100 text-yellow-900", pptX: 6, pptY: 3 }, { label: "右上", r: "row-start-2 col-start-8", color: "bg-lime-100 text-lime-900", pptX: 8, pptY: 2 }],
+                matrices: [
+                    { id: "A", name: "左下方陣", top: "A_top", right: "shared_AB", bottom: "A_bottom", left: "A_left" },
+                    { id: "B", name: "中下方陣", top: "B_top", right: "shared_BC", bottom: "B_bottom", left: "shared_AB" },
+                    { id: "C", name: "中上方陣", top: "C_top", right: "shared_CD", bottom: "C_bottom", left: "shared_BC" },
+                    { id: "D", name: "右上方陣", top: "D_top", right: "D_right", bottom: "D_bottom", left: "shared_CD" }
+                ]
+            },
+            6: {
+                name: "五階風車基礎版", desc: "四個九宮格呈風車狀首尾相連，中間完美空洞。", gridSizeClass: "grid-cols-6 grid-rows-6", gridStyle: { aspectRatio: '1/1', width: '100%', maxWidth: '560px' },
+                slots: [
+                    { id: "N_top", r: "row-start-1 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 1 },
+                    { id: "N_right", r: "row-start-1 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 1 },
+                    { id: "Shared_NW", r: "row-start-2 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 2 },
+                    { id: "Shared_NE", r: "row-start-3 col-start-4 col-span-2", isV: false, pptX: 4, pptY: 3 },
+                    { id: "W_top", r: "row-start-2 col-start-1 col-span-2", isV: false, pptX: 1, pptY: 2 },
+                    { id: "W_left", r: "row-start-3 row-span-2 col-start-1", isV: true, pptX: 1, pptY: 3 },
+                    { id: "Shared_WS", r: "row-start-4 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 4 },
+                    { id: "S_left", r: "row-start-5 row-span-2 col-start-2", isV: true, pptX: 2, pptY: 5 },
+                    { id: "S_bottom", r: "row-start-6 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 6 },
+                    { id: "Shared_SE", r: "row-start-4 row-span-2 col-start-4", isV: true, pptX: 4, pptY: 4 },
+                    { id: "E_right", r: "row-start-3 row-span-2 col-start-6", isV: true, pptX: 6, pptY: 3 },
+                    { id: "E_bottom", r: "row-start-5 col-start-5 col-span-2", isV: false, pptX: 5, pptY: 5 }
+                ],
+                centers: [
+                    { label: "北", r: "row-start-2 col-start-4", color: "bg-blue-100 text-blue-900", pptX: 4, pptY: 2 },
+                    { label: "西", r: "row-start-3 col-start-2", color: "bg-green-100 text-green-900", pptX: 2, pptY: 3 },
+                    { label: "南", r: "row-start-5 col-start-3", color: "bg-red-100 text-red-900", pptX: 3, pptY: 5 },
+                    { label: "東", r: "row-start-4 col-start-5", color: "bg-purple-100 text-purple-900", pptX: 5, pptY: 4 }
+                ],
+                matrices: [
+                    { id: "North", name: "北方陣", top: "N_top", right: "N_right", bottom: "Shared_NE", left: "Shared_NW" },
+                    { id: "West", name: "西方陣", top: "W_top", right: "Shared_NW", bottom: "Shared_WS", left: "W_left" },
+                    { id: "South", name: "南方陣", top: "Shared_WS", right: "Shared_SE", bottom: "S_bottom", left: "S_left" },
+                    { id: "East", name: "東方陣", top: "Shared_NE", right: "E_right", bottom: "E_bottom", left: "Shared_SE" }
+                ]
+            },
+            5: {
+                name: "五階十字方連", desc: "五個九宮格十字交叉排列，中心共享四邊。", gridSizeClass: "grid-cols-9 grid-rows-9", gridStyle: { aspectRatio: '1/1', width: '100%', maxWidth: '640px' },
+                slots: [
+                    { id: "C_top", r: "row-start-4 col-start-4 col-span-2", isV: false, pptX: 4, pptY: 4 }, { id: "C_right", r: "row-start-4 row-span-2 col-start-6", isV: true, pptX: 6, pptY: 4 },
+                    { id: "C_bottom", r: "row-start-6 col-start-5 col-span-2", isV: false, pptX: 5, pptY: 6 }, { id: "C_left", r: "row-start-5 row-span-2 col-start-4", isV: true, pptX: 4, pptY: 5 },
+                    { id: "T_top", r: "row-start-2 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 2 }, { id: "T_right", r: "row-start-2 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 2 }, { id: "T_left", r: "row-start-3 row-span-2 col-start-3", isV: true, pptX: 3, pptY: 3 },
+                    { id: "E_top", r: "row-start-3 col-start-6 col-span-2", isV: false, pptX: 6, pptY: 3 }, { id: "E_right", r: "row-start-3 row-span-2 col-start-8", isV: true, pptX: 8, pptY: 3 }, { id: "E_bottom", r: "row-start-5 col-start-7 col-span-2", isV: false, pptX: 7, pptY: 5 },
+                    { id: "S_right", r: "row-start-6 row-span-2 col-start-7", isV: true, pptX: 7, pptY: 6 }, { id: "S_bottom", r: "row-start-8 col-start-6 col-span-2", isV: false, pptX: 6, pptY: 8 }, { id: "S_left", r: "row-start-7 row-span-2 col-start-5", isV: true, pptX: 5, pptY: 7 },
+                    { id: "W_top", r: "row-start-5 col-start-2 col-span-2", isV: false, pptX: 2, pptY: 5 }, { id: "W_bottom", r: "row-start-7 col-start-3 col-span-2", isV: false, pptX: 3, pptY: 7 }, { id: "W_left", r: "row-start-6 row-span-2 col-start-2", isV: true, pptX: 2, pptY: 6 }
+                ],
+                centers: [{ label: "中", r: "row-start-5 col-start-5", color: "bg-red-100 text-red-900", pptX: 5, pptY: 5 }, { label: "北", r: "row-start-3 col-start-4", color: "bg-slate-100 text-slate-800", pptX: 4, pptY: 3 }, { label: "東", r: "row-start-4 col-start-7", color: "bg-slate-100 text-slate-800", pptX: 7, pptY: 4 }, { label: "南", r: "row-start-7 col-start-6", color: "bg-slate-100 text-slate-800", pptX: 6, pptY: 7 }, { label: "西", r: "row-start-6 col-start-3", color: "bg-slate-100 text-slate-800", pptX: 3, pptY: 6 }],
+                matrices: [
+                    { id: "Center", name: "中心方陣", top: "C_top", right: "C_right", bottom: "C_bottom", left: "C_left" },
+                    { id: "North", name: "北方陣", top: "T_top", right: "T_right", bottom: "C_top", left: "T_left" },
+                    { id: "East", name: "東方陣", top: "E_top", right: "E_right", bottom: "E_bottom", left: "C_right" },
+                    { id: "South", name: "南方陣", top: "C_bottom", right: "S_right", bottom: "S_bottom", left: "S_left" },
+                    { id: "West", name: "西方陣", top: "W_top", right: "C_left", bottom: "W_bottom", left: "W_left" }
+                ]
+            }
+        };
+
+        // PRNG 演算法，保證指定題每次產生結果一致
+        function createPRNG(seed) {
+            return function() {
+                var t = seed += 0x6D2B79F5;
+                t = Math.imul(t ^ t >>> 15, t | 1);
+                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+                return ((t ^ t >>> 14) >>> 0) / 4294967296;
+            }
+        }
+
+        const workerCode = `
+            self.onmessage = function(e) {
+                const { N, slots, matrices } = e.data;
+                const dominoes = [];
+                for(let i=0; i<=6; i++) {
+                    for(let j=i; j<=6; j++) {
+                        dominoes.push([i, j]);
+                    }
+                }
+                
+                let count = 0;
+                let iterations = 0;
+                const MAX_ITERATIONS = 5000000;
+                let isExact = true;
+                
+                const assigned = {};
+                const used = new Array(28).fill(false);
+                const foundSets = new Set();
+                
+                function getGeomHash(boardState) {
+                    let hashVars = matrices.map(mat => {
+                        const getVal = (sId) => boardState[sId] ? \`\${boardState[sId][0]}-\${boardState[sId][1]}\` : "X";
+                        return [getVal(mat.top), getVal(mat.right), getVal(mat.bottom), getVal(mat.left)];
+                    });
+                    const allPerms = [];
+                    for(let rot=0; rot<4; rot++) {
+                        let curVars = hashVars.map(v => [...v]);
+                        if(rot > 0) curVars = curVars.map(v => [v[3], v[0], v[1], v[2]]);
+                        allPerms.push(curVars.map(v=>v.join('|')).sort().join('||'));
+                        
+                        let flippedVars = curVars.map(v => [v[0], v[3], v[2], v[1]]);
+                        allPerms.push(flippedVars.map(v=>v.join('|')).sort().join('||'));
+                    }
+                    allPerms.sort();
+                    return allPerms[0];
+                }
+
+                function isValid(currentAssigned) {
+                    for (let mat of matrices) {
+                        const T = currentAssigned[mat.top], R = currentAssigned[mat.right], B = currentAssigned[mat.bottom], L = currentAssigned[mat.left];
+                        const sumT = (T ? T[0] + T[1] : 0) + (R ? R[0] : 0);
+                        const sumR = (R ? R[0] + R[1] : 0) + (B ? B[1] : 0);
+                        const sumB = (B ? B[0] + B[1] : 0) + (L ? L[1] : 0);
+                        const sumL = (L ? L[0] + L[1] : 0) + (T ? T[0] : 0);
+                        if (T && R && sumT !== N) return false;
+                        if (R && B && sumR !== N) return false;
+                        if (B && L && sumB !== N) return false;
+                        if (L && T && sumL !== N) return false;
+                        if (sumT > N || sumR > N || sumB > N || sumL > N) return false;
+                    }
+                    return true;
+                }
+                
+                function dfs(slotIdx) {
+                    if (iterations++ > MAX_ITERATIONS) { isExact = false; return; }
+                    
+                    if (iterations % 100000 === 0) {
+                        self.postMessage({ type: 'progress', iters: iterations });
+                    }
+
+                    if (slotIdx === slots.length) {
+                        const geomHash = getGeomHash(assigned);
+                        if(!foundSets.has(geomHash)) {
+                            foundSets.add(geomHash);
+                            count++;
+                        }
+                        return;
+                    }
+                    
+                    const slotId = slots[slotIdx].id;
+                    for (let i = 0; i < 28; i++) {
+                        if (used[i]) continue;
+                        const dom = dominoes[i];
+                        
+                        assigned[slotId] = [dom[0], dom[1]];
+                        if (isValid(assigned)) {
+                            used[i] = true;
+                            dfs(slotIdx + 1);
+                            used[i] = false;
+                        }
+                        if (!isExact) return;
+                        
+                        if (dom[0] !== dom[1]) {
+                            assigned[slotId] = [dom[1], dom[0]];
+                            if (isValid(assigned)) {
+                                used[i] = true;
+                                dfs(slotIdx + 1);
+                                used[i] = false;
+                            }
+                            if (!isExact) return;
+                        }
+                        delete assigned[slotId];
+                    }
+                }
+                
+                dfs(0);
+                self.postMessage({ type: 'done', count, isExact });
+            };
+        `;
+
+        function generateGameData(level, mode = 'free') {
+            const config = LEVEL_CONFIGS[level];
+            const slots = config.slots;
+            const matrices = config.matrices;
+            let seedOffset = 0;
+
+            while (true) {
+                // 產生 PRNG
+                let prng = mode === 'free' ? Math.random : createPRNG(level * 100 + mode * 10 + seedOffset);
+                
+                // 動態決定嘗試的 N 順序，避免寫死 N 導致無解而造成系統當機
+                let possibleNs = [8, 9, 10, 11, 12, 13];
+                if (mode !== 'free') {
+                    for (let i = possibleNs.length - 1; i > 0; i--) {
+                        const j = Math.floor(prng() * (i + 1));
+                        [possibleNs[i], possibleNs[j]] = [possibleNs[j], possibleNs[i]];
+                    }
+                } else {
+                    possibleNs.sort(() => Math.random() - 0.5);
+                }
+
+                for (let targetN of possibleNs) {
+                    const assigned = {};
+                    let iters = 0;
+
+                    function backtrack(slotIdx) {
+                        if (iters++ > 30000) return false; 
+
+                        if (slotIdx === slots.length) {
+                            for (let mat of matrices) {
+                                const T = assigned[mat.top], R = assigned[mat.right], B = assigned[mat.bottom], L = assigned[mat.left];
+                                if ((T[0] + T[1] + R[0] !== targetN) || (R[0] + R[1] + B[1] !== targetN) || (B[1] + B[0] + L[1] !== targetN) || (L[1] + L[0] + T[0] !== targetN)) return false;
+                            }
+                            const hashSet = new Set(slots.map(s => Math.min(assigned[s.id][0], assigned[s.id][1]) + "-" + Math.max(assigned[s.id][0], assigned[s.id][1])));
+                            return hashSet.size === slots.length;
+                        }
+                        
+                        const slotId = slots[slotIdx].id;
+                        const pairs = [];
+                        for (let v1 = 0; v1 <= 6; v1++) for (let v2 = 0; v2 <= 6; v2++) pairs.push([v1, v2]);
+                        
+                        // Fisher-Yates 洗牌
+                        for (let i = pairs.length - 1; i > 0; i--) {
+                            const j = Math.floor(prng() * (i + 1));
+                            [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+                        }
+
+                        for (let pair of pairs) {
+                            const currentHash = Math.min(pair[0], pair[1]) + "-" + Math.max(pair[0], pair[1]);
+                            let isDuplicate = false;
+                            for (let prevIdx = 0; prevIdx < slotIdx; prevIdx++) {
+                                const prevVal = assigned[slots[prevIdx].id];
+                                if (Math.min(prevVal[0], prevVal[1]) + "-" + Math.max(prevVal[0], prevVal[1]) === currentHash) { isDuplicate = true; break; }
+                            }
+                            if (isDuplicate) continue;
+
+                            assigned[slotId] = pair;
+                            let prunes = false;
+                            for (let mat of matrices) {
+                                const T = assigned[mat.top], R = assigned[mat.right], B = assigned[mat.bottom], L = assigned[mat.left];
+                                if (T && R && (T[0] + T[1] + R[0] !== targetN)) { prunes = true; break; }
+                                if (R && B && (R[0] + R[1] + B[1] !== targetN)) { prunes = true; break; }
+                                if (B && L && (B[1] + B[0] + L[1] !== targetN)) { prunes = true; break; }
+                                if (L && T && (L[1] + L[0] + T[0] !== targetN)) { prunes = true; break; }
+                            }
+                            if (!prunes && backtrack(slotIdx + 1)) return true;
+                            delete assigned[slotId];
+                        }
+                        return false;
+                    }
+
+                    if (backtrack(0)) return { targetN, solutionMapping: assigned };
+                }
+                
+                // 若指定的 seed 洗牌後，所有的 N 在 30000 步內都搜不到解，自動換 seed 重算
+                if (mode !== 'free') {
+                    seedOffset++; 
+                }
+            }
+        }
+
+        const MiniBoard = ({ record, config }) => {
+            if (!record || !config) return null;
+            return (
+                <div className={`grid ${config.gridSizeClass} gap-0.5 p-1 bg-slate-100 rounded-lg border border-slate-300 w-full max-w-[280px] mx-auto shadow-sm`} style={{ aspectRatio: config.gridStyle.aspectRatio }}>
+                    {config.slots.map(s => {
+                        const slot = record.board[s.id];
+                        const dom = record.inventory.find(d => d.id === slot?.id);
+                        if (!dom) return <div key={s.id} className={`${s.r} bg-white/50 rounded-sm border border-dashed border-slate-200`}></div>;
+                        const v1 = slot.flipped ? dom.v2 : dom.v1;
+                        const v2 = slot.flipped ? dom.v1 : dom.v2;
+                        return (
+                            <div key={s.id} className={`${s.r} flex ${s.isV ? 'flex-col' : 'flex-row'} bg-slate-800 text-white rounded-[2px] overflow-hidden text-xs font-black border border-slate-900`}>
+                                <div className={`flex-1 flex items-center justify-center ${s.isV ? 'border-b border-slate-600' : 'border-r border-slate-600'}`}>{v1}</div>
+                                <div className="flex-1 flex items-center justify-center">{v2}</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        function App() {
+            const [currentLevel, setCurrentLevel] = useState(2);
+            const [challengeMode, setChallengeMode] = useState(1); 
+            const [isOpenMode, setIsOpenMode] = useState(false);
+            const [gameState, setGameState] = useState(null);
+            const [studentInfo, setStudentInfo] = useState({ name: "", className: "", number: "" });
+            
+            const [isTouchDevice, setIsTouchDevice] = useState(false);
+            const [dragOverSlot, setDragOverSlot] = useState(null);
+            const [selectedBoardSlot, setSelectedBoardSlot] = useState(null); 
+
+            const [timer, setTimer] = useState(0);
+            const [steps, setSteps] = useState(0);
+            const [timerActive, setTimerActive] = useState(false);
+            
+            const [isHideTimerForExport, setIsHideTimerForExport] = useState(false);
+            const [showEmptyForExport, setShowEmptyForExport] = useState(false);
+            const [certBtnText, setCertBtnText] = useState("🏅 下載過關榮譽證書");
+            
+            const [foundSolutions, setFoundSolutions] = useState(new Set());
+            const [collectedRecords, setCollectedRecords] = useState([]);
+            const [isNewSolutionFound, setIsNewSolutionFound] = useState(false);
+            const [leaderboard, setLeaderboard] = useState([]);
+            const [totalSolutionsInfo, setTotalSolutionsInfo] = useState({ calculating: false, count: 0, isExact: true, iters: 0 });
+            const [praiseText, setPraiseText] = useState("");
+            const [showClearConfirm, setShowClearConfirm] = useState(false);
+            
+            const [filterLevel, setFilterLevel] = useState("all");
+            const [filterMode, setFilterMode] = useState("all");
+
+            const printRef = useRef(null);
+            const certRef = useRef(null);
+            const workerRef = useRef(null);
+
+            const config = useMemo(() => LEVEL_CONFIGS[currentLevel], [currentLevel]);
+            
+            // 🌟 核心修正：針對不同階數，動態調整字體、間距與邊框，解決五階十字擁擠與重疊的問題
+            const uiStyles = useMemo(() => {
+                if (currentLevel === 5) return { 
+                    text: "text-base sm:text-lg", border: "border-[2px]", gap: "gap-0.5", rounded: "rounded-md",
+                    centerText: "text-[10px] sm:text-xs", centerMargin: "m-0.5", emptyText: "text-[10px] sm:text-xs",
+                    slotPadding: "p-0.5", ring: "ring-2", scale: "scale-[1.03]"
+                };
+                if (currentLevel === 4 || currentLevel === 3 || currentLevel === 6) return { 
+                    text: "text-lg sm:text-xl", border: "border-2 sm:border-[3px]", gap: "gap-1", rounded: "rounded-lg",
+                    centerText: "text-[10px] sm:text-xs", centerMargin: "m-1", emptyText: "text-[10px] sm:text-xs",
+                    slotPadding: "p-0.5 sm:p-1", ring: "ring-[3px]", scale: "scale-105"
+                };
+                return { 
+                    text: "text-xl sm:text-2xl", border: "border-[3px]", gap: "gap-1.5", rounded: "rounded-xl",
+                    centerText: "text-xs", centerMargin: "m-1", emptyText: "text-sm",
+                    slotPadding: "p-1", ring: "ring-[4px]", scale: "scale-105"
+                };
+            }, [currentLevel]);
+            
+            const isPlaying = timerActive || steps > 0 || timer > 0;
+            const showHeader = !isPlaying || showEmptyForExport;
+
+            useEffect(() => {
+                const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0);
+                setIsTouchDevice(isTouch);
+
+                let interval = null;
+                if (timerActive && gameState && !gameState.won) {
+                    interval = setInterval(() => setTimer(t => t + 1), 1000);
+                } else if (!timerActive && timer !== 0) {
+                    clearInterval(interval);
+                }
+                return () => clearInterval(interval);
+            }, [timerActive, gameState?.won]);
+
+            useEffect(() => { 
+                const saved = localStorage.getItem('whirlwindLeaderboard');
+                if (saved) setLeaderboard(JSON.parse(saved));
+            }, []);
+
+            const startCalculateTotalWorker = (targetN) => {
+                if (workerRef.current) workerRef.current.terminate();
+                setTotalSolutionsInfo({ calculating: true, count: 0, isExact: true, iters: 0 });
+
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const worker = new Worker(URL.createObjectURL(blob));
+                workerRef.current = worker;
+
+                worker.postMessage({ N: targetN, slots: config.slots, matrices: config.matrices });
+
+                worker.onmessage = (e) => {
+                    if (e.data.type === 'progress') {
+                        setTotalSolutionsInfo(prev => ({ ...prev, iters: e.data.iters }));
+                    } else if (e.data.type === 'done') {
+                        setTotalSolutionsInfo({ calculating: false, count: e.data.count, isExact: e.data.isExact, iters: 0 });
+                    }
+                };
+            };
+
+            const initGame = (level = currentLevel, openMode = isOpenMode, preserveFound = false, mode = challengeMode) => {
+                const { targetN, solutionMapping } = generateGameData(level, mode);
+                
+                let newInventory = [];
+                if (openMode) {
+                    let idCounter = 0;
+                    for (let i = 0; i <= 6; i++) {
+                        for (let j = i; j <= 6; j++) {
+                            newInventory.push({ id: `full-dom-${idCounter++}`, v1: i, v2: j });
+                        }
+                    }
+                } else {
+                    newInventory = config.slots.map((s, idx) => ({
+                        id: `dom-${idx}`, v1: solutionMapping[s.id][0], v2: solutionMapping[s.id][1]
+                    }));
+                }
+                
+                if (mode !== 'free') {
+                    const prng = createPRNG(level * 333 + mode * 77);
+                    for (let i = newInventory.length - 1; i > 0; i--) {
+                        const j = Math.floor(prng() * (i + 1));
+                        [newInventory[i], newInventory[j]] = [newInventory[j], newInventory[i]];
+                    }
+                } else {
+                    newInventory.sort(() => Math.random() - 0.5);
+                }
+                
+                const board = {};
+                LEVEL_CONFIGS[level].slots.forEach(s => { board[s.id] = null; });
+
+                setGameState({ N: targetN, inventory: newInventory, board, solutionMapping, selectedId: null, won: false, hintCount: 0 });
+                setTimer(0);
+                setSteps(0);
+                setPraiseText("");
+                setTimerActive(false);
+                setSelectedBoardSlot(null);
+
+                if (!preserveFound) {
+                    setFoundSolutions(new Set());
+                    setCollectedRecords([]);
+                    setIsNewSolutionFound(false);
+                }
+
+                if (openMode && !preserveFound) {
+                    startCalculateTotalWorker(targetN);
+                }
+            };
+
+            useEffect(() => { initGame(currentLevel, isOpenMode, false, challengeMode); return () => { if(workerRef.current) workerRef.current.terminate(); }; }, [currentLevel]);
+
+            const triggerStartAction = () => {
+                if (!timerActive && gameState && !gameState.won) {
+                    setTimerActive(true);
+                }
+            };
+
+            const getGeomHashMain = (currentBoard, currentInventory, configMats) => {
+                let hashVars = configMats.map(mat => {
+                    const getVal = (sId) => {
+                        const slot = currentBoard[sId];
+                        if (!slot) return "X";
+                        const dom = currentInventory.find(d => d.id === slot.id);
+                        if (!dom) return "X";
+                        return slot.flipped ? `${dom.v2}-${dom.v1}` : `${dom.v1}-${dom.v2}`;
+                    };
+                    return [getVal(mat.top), getVal(mat.right), getVal(mat.bottom), getVal(mat.left)];
+                });
+                
+                const allPerms = [];
+                for(let rot=0; rot<4; rot++) {
+                    let curVars = hashVars.map(v => [...v]);
+                    if(rot > 0) curVars = curVars.map(v => [v[3], v[0], v[1], v[2]]);
+                    allPerms.push(curVars.map(v=>v.join('|')).sort().join('||'));
+                    let flippedVars = curVars.map(v => [v[0], v[3], v[2], v[1]]);
+                    allPerms.push(flippedVars.map(v=>v.join('|')).sort().join('||'));
+                }
+                allPerms.sort();
+                return allPerms[0];
+            };
+
+            const getSlotValue = (boardState, slotId, index) => {
+                const slot = boardState[slotId];
+                if (!slot) return 0;
+                const dom = gameState.inventory.find(d => d.id === slot.id);
+                if (!dom) return 0;
+                return slot.flipped ? (index === 0 ? dom.v2 : dom.v1) : (index === 0 ? dom.v1 : dom.v2);
+            };
+
+            const checkVictory = (prevState, currentBoard) => {
+                let allMatricesMatch = true;
+                for (let mat of config.matrices) {
+                    const T1 = getSlotValue(currentBoard, mat.top, 0), T2 = getSlotValue(currentBoard, mat.top, 1);
+                    const R1 = getSlotValue(currentBoard, mat.right, 0), R2 = getSlotValue(currentBoard, mat.right, 1);
+                    const B1 = getSlotValue(currentBoard, mat.bottom, 0), B2 = getSlotValue(currentBoard, mat.bottom, 1);
+                    const L1 = getSlotValue(currentBoard, mat.left, 0), L2 = getSlotValue(currentBoard, mat.left, 1);
+
+                    const sumTop = T1 + T2 + R1, sumRight = R1 + R2 + B2;
+                    const sumBottom = B2 + B1 + L2, sumLeft = L2 + L1 + T1;
+
+                    const isFull = currentBoard[mat.top] && currentBoard[mat.right] && currentBoard[mat.bottom] && currentBoard[mat.left];
+                    if (!isFull || sumTop !== prevState.N || sumRight !== prevState.N || sumBottom !== prevState.N || sumLeft !== prevState.N) {
+                        allMatricesMatch = false; break;
+                    }
+                }
+                const totalFilled = Object.values(currentBoard).filter(v => v !== null).length;
+                const isWon = allMatricesMatch && totalFilled === config.slots.length;
+
+                if (isWon && !prevState.won) {
+                    const praises = ["🎉 太神啦！完美通關！", "🔥 燃燒吧大腦！順利解開！", "🧠 邏輯滿分！你做到了！", "✨ 太厲害了！精彩的佈局！", "🏅 不可思議！成功破解！"];
+                    setPraiseText(praises[Math.floor(Math.random() * praises.length)]);
+                    setTimerActive(false);
+                    setSelectedBoardSlot(null);
+
+                    const modePrefix = challengeMode === 'free' ? "自由隨機" : `指定題 ${challengeMode}`;
+                    const modeLabel = `${modePrefix} (${isOpenMode ? "開放" : "封閉"})`;
+                    
+                    if (isOpenMode) {
+                        const hash = getGeomHashMain(currentBoard, prevState.inventory, config.matrices);
+                        if (!foundSolutions.has(hash)) {
+                            setFoundSolutions(prev => new Set(prev).add(hash));
+                            setCollectedRecords(prev => [...prev, { 
+                                board: currentBoard, 
+                                inventory: prevState.inventory, 
+                                level: currentLevel, 
+                                N: prevState.N, 
+                                steps: steps + 1, 
+                                time: timer,
+                                hintCount: prevState.hintCount
+                            }]);
+                            setIsNewSolutionFound(true);
+                        } else {
+                            setIsNewSolutionFound(false);
+                        }
+                    }
+
+                    const newRecord = { 
+                        name: studentInfo.name || "神秘挑戰者", 
+                        className: studentInfo.className || "",
+                        number: studentInfo.number || "",
+                        N: prevState.N, 
+                        level: currentLevel, 
+                        levelName: config.name,
+                        mode: modeLabel, 
+                        time: timer, 
+                        steps: steps + 1, 
+                        hintCount: prevState.hintCount,
+                        date: new Date().toLocaleDateString() + " " + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    };
+                    
+                    const updatedLeaderboard = [...leaderboard, newRecord]
+                        .sort((a, b) => {
+                            if (a.level !== b.level) return b.level - a.level;
+                            if (a.hintCount !== b.hintCount) return a.hintCount - b.hintCount;
+                            return a.time - b.time;
+                        });
+                    setLeaderboard(updatedLeaderboard);
+                    localStorage.setItem('whirlwindLeaderboard', JSON.stringify(updatedLeaderboard));
+                }
+                return { ...prevState, board: currentBoard, won: isWon };
+            };
+
+            const handleDragStart = (e, id) => {
+                if (isTouchDevice) {
+                    e.preventDefault();
+                    return;
+                }
+                triggerStartAction();
+                e.dataTransfer.setData("domId", id);
+                e.dataTransfer.effectAllowed = "move";
+                setGameState(prev => ({ ...prev, selectedId: null })); 
+                setSelectedBoardSlot(null);
+            };
+
+            const handleDropOnSlot = (e, targetSlotId) => {
+                e.preventDefault(); e.stopPropagation();
+                setDragOverSlot(null);
+                triggerStartAction();
+                if (gameState.won) return;
+                
+                const dragId = e.dataTransfer.getData("domId");
+                if (!dragId) return;
+
+                setGameState(prev => {
+                    const newBoard = { ...prev.board };
+                    let sourceSlotId = null;
+
+                    Object.keys(newBoard).forEach(key => {
+                        if (newBoard[key]?.id === dragId) sourceSlotId = key;
+                    });
+
+                    const targetExistingCard = newBoard[targetSlotId];
+
+                    if (sourceSlotId) {
+                        newBoard[sourceSlotId] = targetExistingCard;
+                        newBoard[targetSlotId] = prev.board[sourceSlotId];
+                    } else {
+                        Object.keys(newBoard).forEach(key => { if (newBoard[key]?.id === dragId) newBoard[key] = null; });
+                        newBoard[targetSlotId] = { id: dragId, flipped: false };
+                    }
+                    
+                    setSteps(s => s + 1);
+                    return checkVictory({ ...prev, selectedId: null }, newBoard);
+                });
+            };
+
+            // 全新核心邏輯：控制盤面上「點擊空位移動」、「點擊互相交換」、「點擊自己翻轉」
+            const handleSlotClick = (slotId) => {
+                triggerStartAction();
+                if (gameState.won) return;
+
+                setGameState(prev => {
+                    const newBoard = { ...prev.board };
+                    const clickedSlotCard = newBoard[slotId];
+
+                    if (prev.selectedId) {
+                        // 1. 若手牌區有選取 -> 放入該格子 (覆蓋舊牌)
+                        Object.keys(newBoard).forEach(key => { if (newBoard[key]?.id === prev.selectedId) newBoard[key] = null; });
+                        newBoard[slotId] = { id: prev.selectedId, flipped: false };
+                        prev.selectedId = null;
+                        setSelectedBoardSlot(null);
+                        setSteps(s => s + 1);
+                    } else if (selectedBoardSlot) {
+                        // 2. 若盤面已有選取的牌
+                        if (selectedBoardSlot === slotId) {
+                            // 2a. 點同一張 -> 原地翻轉
+                            newBoard[slotId] = { ...newBoard[slotId], flipped: !newBoard[slotId].flipped };
+                            setSelectedBoardSlot(null);
+                            setSteps(s => s + 1);
+                        } else {
+                            // 2b. 點另一張或空位 -> 互換或移動
+                            const temp = newBoard[slotId];
+                            newBoard[slotId] = newBoard[selectedBoardSlot];
+                            newBoard[selectedBoardSlot] = temp;
+                            setSelectedBoardSlot(null);
+                            setSteps(s => s + 1);
+                        }
+                    } else {
+                        // 3. 無任何選取，點擊有牌的格子 -> 選取該盤面的牌
+                        if (newBoard[slotId]) {
+                            setSelectedBoardSlot(slotId);
+                        }
+                    }
+                    return checkVictory(prev, newBoard);
+                });
+            };
+
+            const handleInventoryCardClick = (e, domId) => {
+                e.stopPropagation(); 
+                triggerStartAction();
+                if (gameState.won) return;
+                
+                setGameState(prev => {
+                    if (prev.selectedId === domId) {
+                        return {
+                            ...prev,
+                            inventory: prev.inventory.map(d => d.id === domId ? { ...d, v1: d.v2, v2: d.v1 } : d),
+                        };
+                    }
+                    setSelectedBoardSlot(null); // 取消盤面選取
+                    return { ...prev, selectedId: domId };
+                });
+            };
+
+            const handleInventoryContainerClick = (e) => {
+                if (gameState.won) return;
+                
+                // 1. 如果盤面上有選取的牌 -> 取下收回
+                if (selectedBoardSlot) {
+                    setGameState(prev => {
+                        const newBoard = { ...prev.board };
+                        newBoard[selectedBoardSlot] = null; 
+                        setSteps(s => s + 1);
+                        return checkVictory(prev, newBoard);
+                    });
+                    setSelectedBoardSlot(null);
+                }
+                
+                // 2. 取消手牌選取
+                if (gameState.selectedId) {
+                    setGameState(prev => ({ ...prev, selectedId: null }));
+                }
+            };
+
+            const handleDropToInventory = (e) => {
+                e.preventDefault(); e.stopPropagation();
+                triggerStartAction();
+                if (gameState.won) return;
+                const dragId = e.dataTransfer.getData("domId");
+                if (dragId && Object.values(gameState.board).some(s => s?.id === dragId)) {
+                    setGameState(prev => {
+                        const newBoard = { ...prev.board };
+                        Object.keys(newBoard).forEach(k => { if (newBoard[k]?.id === dragId) newBoard[k] = null; });
+                        setSteps(s => s + 1);
+                        return checkVictory(prev, newBoard);
+                    });
+                }
+            };
+
+            const handleGetHint = () => {
+                if (challengeMode !== 'free') return; 
+                triggerStartAction();
+                if (gameState.won) return;
+                const { board, inventory, solutionMapping } = gameState;
+                const incorrectSlotInfo = config.slots.find(s => {
+                    const currentPlaced = board[s.id];
+                    const correctVals = solutionMapping[s.id]; 
+                    if (!currentPlaced) return true; 
+                    const dom = inventory.find(d => d.id === currentPlaced.id);
+                    const curV1 = currentPlaced.flipped ? dom.v2 : dom.v1;
+                    const curV2 = currentPlaced.flipped ? dom.v1 : dom.v2;
+                    return !(curV1 === correctVals[0] && curV2 === correctVals[1]);
+                });
+                if (!incorrectSlotInfo) return; 
+
+                const targetSlotId = incorrectSlotInfo.id;
+                const correctVals = solutionMapping[targetSlotId];
+                const correctDom = inventory.find(d => (d.v1 === correctVals[0] && d.v2 === correctVals[1]) || (d.v1 === correctVals[1] && d.v2 === correctVals[0]));
+
+                if (correctDom) {
+                    setGameState(prev => {
+                        const newBoard = { ...prev.board };
+                        Object.keys(newBoard).forEach(key => { if (newBoard[key]?.id === correctDom.id) newBoard[key] = null; });
+                        newBoard[targetSlotId] = { id: correctDom.id, flipped: correctDom.v1 !== correctVals[0] };
+                        setSteps(s => s + 1);
+                        setSelectedBoardSlot(null);
+                        const nextState = checkVictory(prev, newBoard);
+                        return { ...nextState, hintCount: prev.hintCount + 1, selectedId: null };
+                    });
+                }
+            };
+
+            const handleDownloadCertificate = async () => {
+                if (!certRef.current) return;
+                setCertBtnText("⏳ 正在產生證書...");
+                try {
+                    const canvas = await html2canvas(certRef.current, { scale: 2, backgroundColor: '#f8fafc', useCORS: true });
+                    const link = document.createElement('a');
+                    link.download = `榮譽證書_${studentInfo.name || '挑戰者'}_N${gameState.N}.jpg`;
+                    link.href = canvas.toDataURL('image/jpeg', 0.95);
+                    link.click();
+                    setCertBtnText("✅ 下載成功！");
+                    setTimeout(() => setCertBtnText("🏅 下載過關榮譽證書"), 3000);
+                } catch (error) { 
+                    setCertBtnText("❌ 證書下載失敗，請重試");
+                    setTimeout(() => setCertBtnText("🏅 下載過關榮譽證書"), 3000);
+                }
+            };
+
+            const handleExportEmptyWorksheet = async () => {
+                if (!printRef.current) return;
+                setIsHideTimerForExport(true);
+                setShowEmptyForExport(true);
+                setTimeout(async () => {
+                    try {
+                        const canvas = await html2canvas(printRef.current, { scale: 2, backgroundColor: '#f8fafc' });
+                        const link = document.createElement('a');
+                        link.download = `旋風魔方陣_學習單_${config.name}_N${gameState.N}.jpg`;
+                        link.href = canvas.toDataURL('image/jpeg', 0.9);
+                        link.click();
+                    } catch(e){}
+                    setIsHideTimerForExport(false);
+                    setShowEmptyForExport(false);
+                }, 100);
+            };
+
+            const filteredLeaderboard = useMemo(() => {
+                return leaderboard.filter(item => {
+                    const matchLevel = filterLevel === "all" || item.level === parseInt(filterLevel);
+                    const matchMode = filterMode === "all" || item.mode.includes(filterMode);
+                    return matchLevel && matchMode;
+                });
+            }, [leaderboard, filterLevel, filterMode]);
+
+            if (!gameState) return <div className="text-center mt-20 text-2xl font-bold">載入中...</div>;
+
+            const { N, inventory, board, selectedId, won, hintCount } = gameState;
+            const displayBoard = showEmptyForExport ? Object.fromEntries(Object.keys(board).map(k => [k, null])) : board;
+
+            const matrixStatus = config.matrices.map(mat => {
+                const T1 = getSlotValue(displayBoard, mat.top, 0), T2 = getSlotValue(displayBoard, mat.top, 1);
+                const R1 = getSlotValue(displayBoard, mat.right, 0), R2 = getSlotValue(displayBoard, mat.right, 1);
+                const B1 = getSlotValue(displayBoard, mat.bottom, 0), B2 = getSlotValue(displayBoard, mat.bottom, 1);
+                const L1 = getSlotValue(displayBoard, mat.left, 0), L2 = getSlotValue(displayBoard, mat.left, 1);
+                
+                const sumTop = T1 + T2 + R1, sumRight = R1 + R2 + B2, sumBottom = B2 + B1 + L2, sumLeft = L2 + L1 + T1;
+                
+                return {
+                    topState: displayBoard[mat.top] && displayBoard[mat.right] ? (sumTop === N ? 'green' : (sumTop > N ? 'red' : '')) : '',
+                    rightState: displayBoard[mat.right] && displayBoard[mat.bottom] ? (sumRight === N ? 'green' : (sumRight > N ? 'red' : '')) : '',
+                    bottomState: displayBoard[mat.bottom] && displayBoard[mat.left] ? (sumBottom === N ? 'green' : (sumBottom > N ? 'red' : '')) : '',
+                    leftState: displayBoard[mat.left] && displayBoard[mat.top] ? (sumLeft === N ? 'green' : (sumLeft > N ? 'red' : '')) : ''
+                };
+            });
+
+            const getSlotFeedbackClass = (slotId) => {
+                let isRed = false, isGreen = false;
+                matrixStatus.forEach((ms, i) => {
+                    const mat = config.matrices[i];
+                    if (mat.top === slotId) { if(ms.topState==='red') isRed=true; if(ms.topState==='green') isGreen=true; }
+                    if (mat.right === slotId) { if(ms.rightState==='red') isRed=true; if(ms.rightState==='green') isGreen=true; }
+                    if (mat.bottom === slotId) { if(ms.bottomState==='red') isRed=true; if(ms.bottomState==='green') isGreen=true; }
+                    if (mat.left === slotId) { if(ms.leftState==='red') isRed=true; if(ms.leftState==='green') isGreen=true; }
+                });
+                if (isRed) return 'glow-red border-red-400';
+                if (isGreen) return 'glow-green border-green-500';
+                return 'border-slate-300';
+            };
+
+            return (
+                <div className="min-h-screen pb-16 px-4 bg-slate-50 select-none overflow-x-hidden" onDragOver={(e)=>e.preventDefault()} onDrop={handleDropToInventory}>
+                    
+                    {/* 遊玩時自動隱藏上方控制列 */}
+                    {showHeader && (
+                        <header className="bg-slate-950 text-white py-4 px-6 mb-4 mt-2 rounded-3xl shadow-xl max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center transition-all">
+                            <div className="flex items-center gap-3">
+                                <span className="text-3xl">🌪️</span>
+                                <div>
+                                    <h1 className="text-xl font-black tracking-wider">旋風魔方陣</h1>
+                                    <p className="text-xs text-slate-400">教學優化版 (六大關卡)</p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 mt-4 md:mt-0 bg-slate-800 p-1.5 rounded-xl border border-slate-700 justify-center max-w-full">
+                                {[1, 2, 3, 4, 6, 5].map(lvl => {
+                                    let label = '';
+                                    if(lvl===1) label='一階';
+                                    if(lvl===2) label='二階斜放';
+                                    if(lvl===3) label='三階斜放';
+                                    if(lvl===4) label='四階斜放';
+                                    if(lvl===6) label='五階風車';
+                                    if(lvl===5) label='五階十字';
+                                    return (
+                                        <button key={lvl} onClick={() => setCurrentLevel(lvl)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${currentLevel === lvl ? 'bg-amber-500 text-slate-950 shadow-md' : 'hover:bg-slate-700 text-slate-300'}`}>
+                                            {label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </header>
+                    )}
+
+                    <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div className="lg:col-span-8 flex flex-col w-full" ref={printRef}>
+                            
+                            {/* 遊玩時自動隱藏題型與班級姓名 */}
+                            {showHeader && (
+                                <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 mb-4 flex flex-col lg:flex-row gap-3 items-center w-full transition-all select-text">
+                                    <div className="flex bg-slate-100 p-1 rounded-xl w-full lg:w-auto overflow-x-auto custom-scrollbar select-none">
+                                        {[1, 2, 3].map(mode => (
+                                            <button 
+                                                key={mode} 
+                                                onClick={() => { setChallengeMode(mode); initGame(currentLevel, isOpenMode, false, mode); }}
+                                                className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${challengeMode === mode ? 'bg-indigo-500 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                指定題 {mode}
+                                            </button>
+                                        ))}
+                                        <button 
+                                            onClick={() => { setChallengeMode('free'); initGame(currentLevel, isOpenMode, false, 'free'); }}
+                                            className={`flex-1 lg:flex-none px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ml-1 border-l border-slate-200 pl-4 ${challengeMode === 'free' ? 'bg-amber-500 text-white shadow-md' : 'text-amber-600 hover:bg-slate-200'}`}
+                                        >
+                                            🎲 自由隨機
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="flex gap-2 w-full lg:w-auto flex-1">
+                                        <input type="text" placeholder="班級" className="w-1/3 px-3 py-2 text-sm border rounded-xl focus:ring-2 focus:ring-blue-400 outline-none" value={studentInfo.className} onChange={e=>setStudentInfo({...studentInfo, className: e.target.value})}/>
+                                        <input type="text" placeholder="座號" className="w-1/3 px-3 py-2 text-sm border rounded-xl focus:ring-2 focus:ring-blue-400 outline-none" value={studentInfo.number} onChange={e=>setStudentInfo({...studentInfo, number: e.target.value})}/>
+                                        <input type="text" placeholder="姓名" className="w-1/3 px-3 py-2 text-sm border rounded-xl focus:ring-2 focus:ring-blue-400 outline-none" value={studentInfo.name} onChange={e=>setStudentInfo({...studentInfo, name: e.target.value})}/>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 盤面區 - 套用動態縮放 uiStyles，解決五階擁擠問題 */}
+                            <div className="bg-amber-50/50 p-4 rounded-[32px] border-4 border-amber-200 flex items-center justify-center my-1 relative">
+                                <div className="absolute top-4 left-4 bg-red-100 border border-red-200 px-4 py-2 rounded-xl shadow-sm">
+                                    <span className="text-slate-600 font-bold text-sm">目標 N：</span>
+                                    <span className="text-2xl font-black text-red-600">{N}</span>
+                                </div>
+                                <div className="absolute top-4 right-4 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm text-xs font-bold text-slate-500">
+                                    {challengeMode === 'free' ? '🎲 自由隨機' : `📌 指定題 ${challengeMode}`}
+                                </div>
+                                
+                                <div className={`grid ${config.gridSizeClass} ${uiStyles.gap} p-1 sm:p-2 w-full mx-auto mt-12 sm:mt-14`} style={{aspectRatio: config.gridStyle.aspectRatio, maxWidth: config.gridStyle.maxWidth}}>
+                                    {config.centers.map((c, idx) => (
+                                        <div key={idx} className={`${c.r} ${uiStyles.centerMargin} ${uiStyles.rounded} flex items-center justify-center shadow-inner border border-slate-200 font-black ${uiStyles.centerText} text-center ${c.color}`}>{c.label}</div>
+                                    ))}
+                                    {config.slots.map(s => {
+                                        const slot = displayBoard[s.id];
+                                        const isDragOver = dragOverSlot === s.id;
+                                        const isSelectedOnBoard = selectedBoardSlot === s.id;
+                                        
+                                        if (!slot) return (
+                                            <div key={s.id} 
+                                                 onDragOver={(e)=>{e.preventDefault(); e.stopPropagation(); setDragOverSlot(s.id);}} 
+                                                 onDragLeave={() => setDragOverSlot(null)}
+                                                 onDrop={(e)=>handleDropOnSlot(e, s.id)} 
+                                                 onClick={() => handleSlotClick(s.id)} 
+                                                 className={`${s.r} ${uiStyles.slotPadding} cursor-pointer`}>
+                                                <div className={`w-full h-full ${uiStyles.rounded} ${uiStyles.border} border-dashed flex items-center justify-center ${uiStyles.emptyText} whitespace-nowrap font-bold transition-all ${selectedId || selectedBoardSlot ? 'border-amber-400 bg-amber-50 text-amber-600 shadow-inner' : 'border-slate-300 bg-white/70 text-slate-400 hover:border-amber-400 hover:bg-amber-50'} ${isDragOver ? 'drag-over' : ''}`}>
+                                                    {selectedId || selectedBoardSlot ? "放入" : "空"}
+                                                </div>
+                                            </div>
+                                        );
+                                        
+                                        const dom = inventory.find(d => d.id === slot.id);
+                                        const fbClass = getSlotFeedbackClass(s.id);
+                                        
+                                        const v1 = slot.flipped ? dom.v2 : dom.v1;
+                                        const v2 = slot.flipped ? dom.v1 : dom.v2;
+
+                                        return (
+                                            <div key={s.id} 
+                                                 draggable={!isTouchDevice} 
+                                                 onDragStart={(e)=>handleDragStart(e, slot.id)} 
+                                                 onDragOver={(e)=>{e.preventDefault(); e.stopPropagation(); setDragOverSlot(s.id);}} 
+                                                 onDragLeave={() => setDragOverSlot(null)}
+                                                 onDrop={(e)=>handleDropOnSlot(e, s.id)} 
+                                                 onClick={() => handleSlotClick(s.id)} 
+                                                 className={`${s.r} ${uiStyles.slotPadding} cursor-pointer`}>
+                                                <div className={`w-full h-full bg-slate-800 text-white ${uiStyles.rounded} shadow-md flex ${s.isV ? 'flex-col' : 'flex-row'} ${uiStyles.border} ${fbClass} overflow-hidden transition-all duration-200 ${isSelectedOnBoard ? `${uiStyles.ring} ring-amber-400 ${uiStyles.scale} z-10 relative shadow-xl bg-slate-700` : ''} ${isDragOver ? 'drag-over' : ''}`}>
+                                                    <div className={`flex-1 flex items-center justify-center ${uiStyles.text} font-black ${s.isV ? 'border-b border-slate-600' : 'border-r border-slate-600'}`}>{v1}</div>
+                                                    <div className={`flex-1 flex items-center justify-center ${uiStyles.text} font-black`}>{v2}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* 手牌區 */}
+                            <div className="mt-4 bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm cursor-pointer hover:bg-slate-50 transition-colors" onClick={handleInventoryContainerClick}>
+                                <h3 className="font-black text-slate-800 text-sm mb-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 pointer-events-none">
+                                    <span className="mt-1 flex flex-col sm:flex-row sm:items-center gap-2">
+                                        🀄 可用手牌區 
+                                        <span className="text-[11px] text-slate-500 font-normal bg-slate-100 px-2 py-0.5 rounded-full inline-block">(點擊此背景即可將盤面骨牌收回)</span>
+                                    </span>
+                                    <div className="flex flex-col gap-1 items-start sm:items-end mt-1 sm:mt-0">
+                                        <span className="text-[11px] text-blue-700 font-bold bg-blue-100/60 px-2.5 py-1 rounded-md border border-blue-200">👆 手機點擊：點盤面可選取。再點空位=移動、他牌=互換、原牌=翻面</span>
+                                    </div>
+                                </h3>
+                                
+                                <div className="flex gap-3 flex-wrap justify-center p-4 bg-slate-100/80 rounded-[16px] border border-slate-200 min-h-[100px]" onDragOver={(e)=>{e.preventDefault(); e.stopPropagation();}} onDrop={handleDropToInventory}>
+                                    {inventory.map(dom => {
+                                        const isPlaced = Object.values(displayBoard).some(s => s?.id === dom.id);
+                                        if (isPlaced) return null;
+                                        
+                                        const isSelected = selectedId === dom.id;
+                                        
+                                        return (
+                                            <div key={dom.id} 
+                                                draggable={!isTouchDevice} 
+                                                onDragStart={(e)=>handleDragStart(e, dom.id)} 
+                                                onClick={(e) => handleInventoryCardClick(e, dom.id)}
+                                                className={`flex w-[68px] h-9 text-white rounded-lg cursor-pointer domino-card border-2 transition-all duration-200 transform group ${isSelected ? 'border-amber-400 ring-[4px] ring-amber-300 scale-[1.15] shadow-xl bg-slate-700 z-10 relative' : 'border-slate-900 bg-slate-900 shadow'}`}>
+                                                <div className="flex-1 flex flex-col items-center justify-center font-black text-lg border-r-2 border-slate-700 relative">
+                                                    <span className={`absolute top-[2px] left-[3px] text-[9px] font-bold leading-none tracking-tighter transition-opacity duration-200 pointer-events-none ${isSelected ? 'opacity-100 text-amber-300' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}>上/左</span>
+                                                    {dom.v1}
+                                                </div>
+                                                <div className="flex-1 flex flex-col items-center justify-center font-black text-lg relative">
+                                                    <span className={`absolute bottom-[2px] right-[3px] text-[9px] font-bold leading-none tracking-tighter transition-opacity duration-200 pointer-events-none ${isSelected ? 'opacity-100 text-amber-300' : 'opacity-0 group-hover:opacity-100 text-slate-400'}`}>下/右</span>
+                                                    {dom.v2}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 右側畫面 (手機端位於下方)：數據區塊與控制按鈕 */}
+                        <div className="lg:col-span-4 flex flex-col gap-6">
+                            
+                            <div className="bg-white p-5 rounded-3xl shadow-md border border-slate-200">
+                                
+                                <div className={`grid grid-cols-3 gap-3 mb-4 ${isHideTimerForExport ? 'opacity-0' : 'opacity-100'}`}>
+                                    <div className="bg-slate-50 p-2.5 rounded-2xl text-center flex flex-col justify-center border border-slate-100 shadow-sm">
+                                        <span className="text-[10px] text-slate-500 font-bold mb-0.5">⏱️ 挑戰時間</span>
+                                        <span className="text-xl font-black text-slate-800">{Math.floor(timer/60)}:{timer%60<10?'0':''}{timer%60}</span>
+                                    </div>
+                                    <div className="bg-slate-50 p-2.5 rounded-2xl text-center flex flex-col justify-center border border-slate-100 shadow-sm">
+                                        <span className="text-[10px] text-slate-500 font-bold mb-0.5">👣 移動步數</span>
+                                        <span className="text-xl font-black text-slate-800">{steps}</span>
+                                    </div>
+                                    <div className="bg-slate-50 p-2.5 rounded-2xl text-center flex flex-col justify-center border border-slate-100 shadow-sm">
+                                        <span className="text-[10px] text-slate-500 font-bold mb-0.5">💡 使用提示</span>
+                                        <span className="text-xl font-black text-slate-800">{hintCount}</span>
+                                    </div>
+                                </div>
+                                
+                                {gameState.won ? (
+                                    <div className="mt-2 border-t border-slate-100 pt-4">
+                                        <div className="bg-green-100 text-green-800 p-3 rounded-xl mb-4 text-center font-bold shadow-inner animate-pulse">
+                                            {praiseText}
+                                        </div>
+                                        
+                                        {isOpenMode && (
+                                            <div className="bg-white p-3 rounded-xl mb-4 text-left shadow-sm border border-green-200">
+                                                <p className="text-sm font-bold text-green-800 mb-1">本局進度：已解出 {foundSolutions.size} 種</p>
+                                                <p className="text-xs text-green-700">
+                                                    {totalSolutionsInfo.calculating ? `電腦推算中... (已搜 ${Math.floor(totalSolutionsInfo.iters/10000)}萬次)` : `推算此題至少有 ${totalSolutionsInfo.isExact ? totalSolutionsInfo.count : totalSolutionsInfo.count + "+"} 種解法`}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <button onClick={handleDownloadCertificate} className="w-full py-3 rounded-xl font-bold shadow-lg transform transition active:scale-95 text-sm bg-green-600 hover:bg-green-700 text-white mb-2">
+                                            {certBtnText}
+                                        </button>
+                                        {isOpenMode && challengeMode === 'free' && (
+                                            <button onClick={()=>{setGameState(p=>{let nb={};Object.keys(p.board).forEach(k=>nb[k]=null);return{...p,board:nb,won:false, hintCount: 0}}); setTimer(0); setSteps(0); setTimerActive(false);}} className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-xl font-bold text-sm shadow mb-2">
+                                                🔍 保留本題隨機N，繼續找新解
+                                            </button>
+                                        )}
+                                        <button onClick={() => initGame()} className="w-full text-sm bg-slate-200 hover:bg-slate-300 text-slate-700 py-3 rounded-xl font-bold transition-colors shadow">
+                                            ⏭️ 放棄本局，返回選單
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="mt-2 border-t border-slate-100 pt-4">
+                                        <div className="grid grid-cols-2 gap-3 mb-4">
+                                            {challengeMode === 'free' ? (
+                                                <button onClick={handleGetHint} className="text-sm bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-xl font-bold transition-colors shadow-sm">💡 電腦提示</button>
+                                            ) : (
+                                                <button disabled className="text-sm bg-slate-100 text-slate-400 py-2.5 rounded-xl font-bold border border-slate-200 cursor-not-allowed flex items-center justify-center" title="指定題無法使用提示，請靠自己挑戰！">
+                                                    <span className="grayscale mr-1 opacity-50">💡</span> 提示停用
+                                                </button>
+                                            )}
+                                            
+                                            <button onClick={() => { setGameState(p => { let nb={}; Object.keys(p.board).forEach(k=>nb[k]=null); return {...p, board: nb, selectedId: null}; }); setSteps(0); setSelectedBoardSlot(null); }} className="text-sm bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-bold transition-colors shadow-sm">🧹 收回所有骨牌</button>
+                                        </div>
+                                        <div className="flex flex-col gap-2 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-100 shadow-inner">
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" id="modeToggle" checked={isOpenMode} onChange={(e) => {setIsOpenMode(e.target.checked); initGame(currentLevel, e.target.checked, false, challengeMode);}} className="w-4 h-4 cursor-pointer accent-blue-600" />
+                                                <label htmlFor="modeToggle" className="text-sm font-bold text-blue-700 cursor-pointer select-none">使用開放式題型 (提供完整28張)</label>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col gap-2">
+                                            <button onClick={handleExportEmptyWorksheet} className="w-full text-sm bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold transition-colors shadow-sm">📝 匯出純題目學習單</button>
+                                            <button onClick={() => initGame()} className="w-full text-sm bg-slate-200 hover:bg-slate-300 text-slate-700 py-2.5 rounded-xl font-bold transition-colors shadow-sm">
+                                                {challengeMode === 'free' ? '🔄 換一題隨機題目' : '🔄 重新開始本題'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 text-white shadow-lg">
+                                <h3 className="text-amber-400 font-bold text-sm mb-3 flex items-center gap-2">🏆 本機英雄風雲榜</h3>
+                                
+                                <div className="space-y-2 mb-4">
+                                    <div className="flex flex-col gap-1.5">
+                                        <span className="text-[10px] text-slate-400">選擇關卡</span>
+                                        <select 
+                                            value={filterLevel} 
+                                            onChange={e=>setFilterLevel(e.target.value)}
+                                            className="bg-slate-800 text-xs border border-slate-700 rounded-lg px-2 py-1.5 text-slate-200 outline-none w-full focus:ring-1 focus:ring-amber-500"
+                                        >
+                                            <option value="all">全部關卡</option>
+                                            <option value="1">一階九宮格</option>
+                                            <option value="2">二階斜放</option>
+                                            <option value="3">三階斜放</option>
+                                            <option value="4">四階斜放</option>
+                                            <option value="6">五階風車</option>
+                                            <option value="5">五階十字</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                        <span className="text-[10px] text-slate-400">選擇難度類型</span>
+                                        <div className="flex gap-2">
+                                            {["all", "封閉", "開放"].map(mode => (
+                                                <button
+                                                    key={mode}
+                                                    onClick={()=>setFilterMode(mode)}
+                                                    className={`flex-1 text-[11px] py-1.5 rounded-lg font-bold transition-all ${filterMode === mode ? 'bg-amber-500 text-slate-950 shadow-md' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'}`}
+                                                >
+                                                    {mode === 'all' ? '全部' : mode}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 text-xs max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+                                    {filteredLeaderboard.length === 0 ? (
+                                        <div className="text-center text-slate-500 py-8">尚無對應風雲榜紀錄</div>
+                                    ) : (
+                                        filteredLeaderboard.map((rec, i) => (
+                                            <div key={i} className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 hover:bg-slate-800 transition-colors">
+                                                <div className="flex justify-between font-bold text-amber-300 mb-1.5">
+                                                    <span>{i+1}. {rec.name} {rec.className && `(${rec.className})`}</span>
+                                                    <span className="bg-amber-900/50 px-2 rounded-full">N={rec.N}</span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-300 flex flex-wrap justify-between mb-1">
+                                                    <span>{rec.levelName}</span>
+                                                    <span className="text-blue-300 bg-blue-900/30 px-1.5 rounded">{rec.mode}</span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-300 flex flex-wrap justify-between mb-1">
+                                                    <span>⏱️ {Math.floor(rec.time/60)}分{rec.time%60}秒 | {rec.steps}步</span>
+                                                    <span>💡 提示：{rec.hintCount}次</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 text-right mt-1">
+                                                    {rec.date}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        if (showClearConfirm) {
+                                            localStorage.removeItem('whirlwindLeaderboard'); 
+                                            setLeaderboard([]);
+                                            setShowClearConfirm(false);
+                                        } else {
+                                            setShowClearConfirm(true);
+                                            setTimeout(() => setShowClearConfirm(false), 3000);
+                                        }
+                                    }}
+                                    className={`w-full mt-4 py-1.5 rounded-lg text-[11px] transition-colors ${showClearConfirm ? 'bg-red-900/50 text-red-400 font-bold border border-red-800' : 'text-slate-500 hover:text-red-400 bg-slate-800 border border-slate-700'}`}
+                                >
+                                    {showClearConfirm ? "⚠️ 再次點擊確認清空 (3秒後取消)" : "🧹 清空所有歷史成績"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 戰利品展示區 */}
+                    {isOpenMode && collectedRecords.length > 0 && (
+                        <div className="max-w-5xl mx-auto mt-6 bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl">
+                            <h3 className="text-amber-400 font-bold text-lg mb-4 text-center">🏆 戰利品：已解鎖 {collectedRecords.length} 種不重複陣型</h3>
+                            <div className="flex flex-wrap gap-6 justify-center">
+                                {collectedRecords.map((rec, idx) => (
+                                    <div key={idx} className="bg-white/10 p-4 rounded-2xl flex flex-col items-center shadow-sm">
+                                        <div className="text-amber-300 text-xs font-bold mb-3">解法 {idx + 1} ({rec.steps}步 | 提示：{rec.hintCount}次)</div>
+                                        <MiniBoard record={rec} config={LEVEL_CONFIGS[rec.level]} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 隱藏的證書畫布 */}
+                    <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+                        <div ref={certRef} className="bg-white w-[900px] p-12 relative overflow-hidden border-[16px] border-amber-500" style={{ backgroundImage: 'radial-gradient(#fef3c7 2px, transparent 2px)', backgroundSize: '30px 30px' }}>
+                            <div className="absolute inset-0 border-[8px] border-amber-200 m-2"></div>
+                            <div className="relative z-10 text-center">
+                                <div className="inline-block bg-amber-500 text-white px-8 py-2 rounded-full font-black text-2xl tracking-widest mb-6 shadow-md">旋風魔方陣 榮譽證明</div>
+                                <h1 className="text-5xl font-black text-slate-800 mb-6 tracking-widest">{studentInfo.name || "挑戰者"}</h1>
+                                
+                                {(studentInfo.className || studentInfo.number) && (
+                                    <p className="text-xl text-slate-600 font-bold mb-4">
+                                        {studentInfo.className ? `${studentInfo.className} ` : ''} 
+                                        {studentInfo.number ? `${studentInfo.number} 號` : ''}
+                                    </p>
+                                )}
+                                
+                                <p className="text-2xl text-slate-700 mb-8 font-bold leading-relaxed">
+                                    成功解開 <span className="text-red-600 font-black px-2">{config.name}</span><br/>
+                                    (目標各邊總和 N = <span className="text-red-600 font-black">{gameState?.N}</span>)
+                                </p>
+                                <p className="text-xl font-bold text-amber-700 mb-6">
+                                    完成模式：{challengeMode === 'free' ? '🎲 自由隨機挑戰' : `📌 指定關卡題型 ${challengeMode}`} 
+                                    ({isOpenMode ? "開放式提供28張" : "封閉式提供剛好張數"})
+                                </p>
+                                
+                                <div className="flex justify-center gap-8 mb-10">
+                                    <div className="bg-slate-100 px-6 py-3 rounded-2xl border-2 border-slate-200 shadow-sm">
+                                        <div className="text-sm text-slate-500 font-bold mb-1">完成時間</div>
+                                        <div className="text-2xl font-black text-slate-800">{Math.floor(timer/60)}分{timer%60}秒</div>
+                                    </div>
+                                    <div className="bg-slate-100 px-6 py-3 rounded-2xl border-2 border-slate-200 shadow-sm">
+                                        <div className="text-sm text-slate-500 font-bold mb-1">總移動步數</div>
+                                        <div className="text-2xl font-black text-slate-800">{steps} 步</div>
+                                    </div>
+                                    <div className="bg-slate-100 px-6 py-3 rounded-2xl border-2 border-slate-200 shadow-sm">
+                                        <div className="text-sm text-slate-500 font-bold mb-1">使用電腦提示</div>
+                                        {hintCount === 0 ? (
+                                            <div className="text-xl font-black text-amber-600 tracking-wide animate-bounce">🥇 完美無瑕 (0次)</div>
+                                        ) : (
+                                            <div className="text-2xl font-black text-slate-800">{hintCount} 次</div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 border-t-2 border-dashed border-amber-300 pt-6">
+                                    <h3 className="font-bold text-amber-700 mb-4 text-lg">
+                                        {isOpenMode ? `本次挑戰共解開 ${collectedRecords.length} 種不重複陣型：` : '過關陣型：'}
+                                    </h3>
+                                    
+                                    <div className="flex flex-wrap justify-center gap-6 px-4 pb-12">
+                                        {isOpenMode && collectedRecords.length > 0 ? (
+                                            collectedRecords.map((rec, idx) => (
+                                                <div key={idx} className="flex flex-col items-center w-[220px]">
+                                                    <div className="text-sm font-bold text-amber-700 mb-2 bg-amber-100/80 px-3 py-0.5 rounded-full border border-amber-200">
+                                                        解法 {idx + 1}
+                                                    </div>
+                                                    <MiniBoard record={rec} config={LEVEL_CONFIGS[rec.level]} />
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="w-[300px]">
+                                                <MiniBoard record={{ board: gameState?.board, inventory: gameState?.inventory }} config={config} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="text-right mt-12 pr-6 pb-4">
+                                    <p className="text-lg font-bold text-amber-800 mb-1">認證日期：{new Date().toLocaleDateString()}</p>
+                                    <p className="text-xs text-amber-600/70">驗證碼：CYC-{Date.now().toString().slice(-6)}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

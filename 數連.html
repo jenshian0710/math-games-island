@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>數連關卡設計大師 (完整解鎖版)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS/libs/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS/dist/pptxgen.min.js"></script>
+
+    <style>
+        body {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            background-color: #f8fafc;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* 星星評分的互動樣式 */
+        .star-rating-input input { display: none; }
+        .star-rating-input label { font-size: 2rem; color: #cbd5e1; cursor: pointer; transition: color 0.2s; }
+        .star-rating-input label:hover,
+        .star-rating-input label:hover ~ label,
+        .star-rating-input input:checked ~ label { color: #fbbf24; }
+        .star-rating-input { display: flex; flex-direction: row-reverse; justify-content: center; }
+        
+        /* 毛玻璃鎖定遮罩 */
+        .glass-lock {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body class="font-sans text-slate-800 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect, useMemo } = React;
+
+        // ==========================================
+        // 教學課程資料 (已完美修復 4-3)
+        // ==========================================
+        const INITIAL_STAGES = [
+            {
+                id: 1, title: "第一課：基礎 L 型包覆",
+                desc: "運用不同顏色像「俄羅斯娃娃」一樣層層包覆，利用角落空間進行迴轉，這是數連最常見的基礎設計技巧。",
+                size: 5,
+                examples: [
+                    [[1, 1, 1, 1, 1], [2, 2, 2, 2, 1], [3, 3, 3, 2, 1], [3, 4, 5, 2, 1], [3, 4, 5, 2, 1]],
+                    [[1, 1, 1, 1, 2], [3, 3, 3, 1, 2], [3, 4, 4, 1, 2], [3, 5, 4, 1, 2], [3, 5, 5, 1, 2]],
+                    [[1, 1, 1, 2, 2], [1, 3, 3, 3, 2], [1, 4, 4, 3, 2], [1, 5, 4, 3, 2], [1, 5, 5, 5, 2]]
+                ]
+            },
+            {
+                id: 2, title: "第二課：梳狀穿插",
+                desc: "讓不同顏色的路線像梳子或拉鍊一樣互相交錯，能有效填滿長方形空間，並且不會形成阻擋彼此的死胡同。",
+                size: 6,
+                examples: [
+                    [[1, 1, 1, 2, 2, 2], [3, 3, 1, 4, 4, 2], [5, 3, 1, 6, 4, 2], [5, 3, 1, 6, 4, 2], [5, 3, 3, 6, 4, 4], [5, 5, 5, 6, 6, 6]],
+                    [[1, 1, 1, 1, 1, 2], [3, 4, 4, 4, 1, 2], [3, 4, 5, 4, 1, 2], [3, 4, 5, 6, 6, 2], [3, 4, 5, 5, 5, 2], [3, 3, 3, 3, 3, 2]],
+                    [[1, 2, 2, 3, 3, 4], [1, 5, 2, 6, 3, 4], [1, 5, 2, 6, 3, 4], [1, 5, 2, 6, 3, 4], [1, 5, 5, 6, 6, 4], [1, 1, 1, 1, 1, 4]]
+                ]
+            },
+            {
+                id: 3, title: "第三課：對角階梯嵌套",
+                desc: "沿著對角線畫出階梯狀的連線，一條包著一條。這能製造出漂亮且具備視覺欺騙性的長距離連線。",
+                size: 7,
+                examples: [
+                    [[1, 2, 2, 2, 2, 2, 3], [1, 1, 4, 4, 4, 2, 3], [5, 1, 1, 6, 4, 2, 3], [5, 5, 1, 6, 4, 2, 3], [7, 5, 1, 1, 4, 3, 3], [7, 5, 5, 1, 1, 8, 8], [7, 7, 5, 5, 1, 1, 8]],
+                    [[1, 1, 2, 2, 3, 3, 4], [5, 1, 1, 2, 2, 3, 4], [5, 5, 1, 1, 2, 2, 4], [6, 5, 5, 1, 1, 2, 4], [6, 6, 5, 5, 1, 1, 4], [7, 6, 6, 5, 5, 1, 4], [7, 7, 6, 6, 5, 5, 4]],
+                    [[1, 1, 1, 2, 2, 3, 3], [4, 4, 1, 1, 2, 2, 3], [5, 4, 4, 1, 1, 2, 3], [5, 6, 4, 4, 1, 1, 3], [5, 6, 6, 4, 4, 1, 1], [5, 7, 6, 6, 4, 4, 1], [5, 7, 7, 6, 6, 4, 4]]
+                ]
+            },
+            {
+                id: 4, title: "第四課：同心螺旋",
+                desc: "高難度題目的常客！讓一條長路線從外圍繞圈進入中心，就像蚊香一樣，再用短路線填補中心的空隙。",
+                size: 8,
+                examples: [
+                    [[1, 1, 1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2, 2, 1], [2, 3, 3, 3, 3, 3, 2, 1], [2, 3, 4, 4, 4, 3, 2, 1], [2, 3, 4, 5, 4, 3, 2, 1], [2, 3, 4, 5, 5, 3, 2, 1], [2, 3, 4, 4, 4, 4, 2, 1], [2, 1, 1, 1, 1, 1, 1, 1]],
+                    [[1, 1, 1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2, 2, 1], [3, 3, 3, 3, 3, 3, 2, 1], [3, 4, 4, 4, 4, 3, 2, 1], [3, 4, 5, 5, 4, 3, 2, 1], [3, 4, 4, 5, 4, 3, 2, 1], [3, 3, 3, 2, 2, 2, 2, 1], [1, 1, 1, 1, 1, 1, 1, 1]],
+                    [
+                        [1, 1, 1, 1, 1, 1, 1, 1], 
+                        [1, 2, 2, 2, 2, 2, 2, 1], 
+                        [1, 2, 1, 1, 1, 1, 2, 1], 
+                        [1, 2, 1, 2, 2, 1, 2, 1], 
+                        [1, 2, 1, 2, 1, 1, 2, 1], 
+                        [1, 2, 1, 2, 2, 2, 2, 1], 
+                        [1, 2, 1, 1, 1, 1, 1, 1], 
+                        [1, 2, 2, 2, 2, 2, 2, 2]
+                    ]
+                ]
+            },
+            {
+                id: 5, title: "第五課：自由創作大師",
+                desc: "恭喜您完成所有修練！現在選擇您想要的盤面大小，創造屬於您的獨家終極關卡並發佈到題庫吧！",
+                size: 'custom',
+                examples: [
+                    [[1, 1, 1, 1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2, 2, 2, 1], [3, 3, 3, 3, 3, 3, 3, 2, 1], [4, 4, 4, 4, 4, 4, 3, 2, 1], [5, 5, 5, 5, 5, 4, 3, 2, 1], [6, 6, 6, 6, 5, 4, 3, 2, 1], [7, 7, 7, 6, 5, 4, 3, 2, 1], [8, 8, 7, 6, 5, 4, 3, 2, 1], [9, 8, 7, 6, 5, 4, 3, 2, 1]],
+                    [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [2, 2, 2, 2, 2, 2, 2, 2, 2, 1], [2, 3, 3, 3, 3, 3, 3, 3, 2, 1], [2, 3, 4, 4, 4, 4, 4, 3, 2, 1], [2, 3, 4, 5, 5, 5, 4, 3, 2, 1], [2, 3, 4, 5, 6, 5, 4, 3, 2, 1], [2, 3, 4, 5, 6, 6, 4, 3, 2, 1], [2, 3, 4, 4, 4, 4, 4, 3, 2, 1], [2, 3, 3, 3, 3, 3, 3, 3, 2, 1], [2, 2, 2, 2, 2, 2, 2, 2, 2, 1]],
+                    [[1, 1, 1, 1, 1, 1, 1, 1, 1, 2], [3, 3, 3, 3, 3, 3, 3, 3, 1, 2], [3, 4, 4, 4, 4, 4, 4, 4, 4, 2], [3, 4, 5, 5, 5, 5, 5, 5, 5, 5], [6, 6, 6, 6, 6, 6, 6, 6, 6, 5], [6, 7, 7, 7, 7, 7, 7, 7, 7, 7], [8, 8, 8, 8, 8, 8, 8, 8, 8, 7], [8, 9, 9, 9, 9, 9, 9, 9, 9, 9], [10, 10, 10, 10, 10, 10, 10, 10, 10, 9], [10, 11, 11, 11, 11, 11, 11, 11, 11, 11]]
+                ]
+            }
+        ];
+
+        // 擴充調色盤
+        const COLOR_MAP = {
+            1: 'bg-red-500', 2: 'bg-blue-500', 3: 'bg-green-500', 4: 'bg-yellow-400', 5: 'bg-purple-500',
+            6: 'bg-pink-500', 7: 'bg-teal-500', 8: 'bg-orange-500', 9: 'bg-cyan-500', 10: 'bg-indigo-500',
+            11: 'bg-lime-500', 12: 'bg-amber-500', 13: 'bg-fuchsia-500', 14: 'bg-emerald-500', 15: 'bg-rose-500',
+            16: 'bg-violet-600', 17: 'bg-sky-500', 18: 'bg-red-700', 19: 'bg-blue-700', 20: 'bg-green-700'
+        };
+
+        const TEXT_MAP = {
+            1: 'text-white', 2: 'text-white', 3: 'text-white', 4: 'text-gray-900', 5: 'text-white',
+            6: 'text-white', 7: 'text-white', 8: 'text-white', 9: 'text-gray-900', 10: 'text-white',
+            11: 'text-gray-900', 12: 'text-gray-900', 13: 'text-white', 14: 'text-white', 15: 'text-white',
+            16: 'text-white', 17: 'text-gray-900', 18: 'text-white', 19: 'text-white', 20: 'text-white'
+        };
+
+        const HEX_COLORS = {
+            1: 'EF4444', 2: '3B82F6', 3: '22C55E', 4: 'FACC15', 5: 'A855F7',
+            6: 'EC4899', 7: '14B8A6', 8: 'F97316', 9: '06B6D4', 10: '6366F1',
+            11: '84CC16', 12: 'F59E0B', 13: 'D946EF', 14: '10B981', 15: 'F43F5E',
+            16: '7C3AED', 17: '0EA5E9', 18: 'B91C1C', 19: '1D4ED8', 20: '15803D'
+        };
+
+        // ==========================================
+        // 核心驗證演算法 (包含隨機映射)
+        // ==========================================
+        const validateDesign = (grid) => {
+            const R = grid.length; const C = grid[0].length;
+            const colors = {}; let hasEmpty = false;
+
+            for (let r = 0; r < R; r++) {
+                for (let c = 0; c < C; c++) {
+                    const col = grid[r][c];
+                    if (col === 0) hasEmpty = true;
+                    else {
+                        if (!colors[col]) colors[col] = [];
+                        colors[col].push({ r, c });
+                    }
+                }
+            }
+
+            if (hasEmpty) return { valid: false, msg: '盤面上還有灰色空白格尚未填滿喔！' };
+            if (Object.keys(colors).length === 0) return { valid: false, msg: '盤面不能是空的！' };
+
+            const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+            const endpointsRaw = [];
+
+            for (const [colStr, cells] of Object.entries(colors)) {
+                const col = parseInt(colStr);
+                if (cells.length < 2) return { valid: false, msg: `顏色區塊太小！顏色 ${col} 至少需要佔用 2 格才能連線。` };
+
+                let colEndpoints = []; let colBranches = false;
+
+                for (const cell of cells) {
+                    let neighbors = 0;
+                    for (const [dr, dc] of dirs) {
+                        const nr = cell.r + dr, nc = cell.c + dc;
+                        if (nr >= 0 && nr < R && nc >= 0 && nc < C && grid[nr][nc] === col) neighbors++;
+                    }
+                    if (neighbors === 1) colEndpoints.push(cell);
+                    if (neighbors > 2) colBranches = true;
+                    if (neighbors === 0) return { valid: false, msg: `發現孤立方塊！顏色 ${col} 有斷開的格子。` };
+                }
+
+                if (colBranches) return { valid: false, msg: `發生分岔或產生2x2方塊！顏色 ${col} 必須是單純的一筆畫。` };
+                if (colEndpoints.length === 0) return { valid: false, msg: `發現封閉迴圈！顏色 ${col} 首尾相連成圈，沒有端點。` };
+                if (colEndpoints.length > 2) return { valid: false, msg: `路線斷裂！顏色 ${col} 產生了超過兩個以上的端點。` };
+
+                const start = cells[0];
+                const visited = new Set([`${start.r},${start.c}`]);
+                const q = [start];
+                while (q.length > 0) {
+                    const curr = q.shift();
+                    for (const [dr, dc] of dirs) {
+                        const nr = curr.r + dr, nc = curr.c + dc;
+                        if (nr >= 0 && nr < R && nc >= 0 && nc < C && grid[nr][nc] === col && !visited.has(`${nr},${nc}`)) {
+                            visited.add(`${nr},${nc}`); q.push({ r: nr, c: nc });
+                        }
+                    }
+                }
+                if (visited.size !== cells.length) return { valid: false, msg: `發現斷層！顏色 ${col} 被拆成了無法互通的獨立區塊。` };
+
+                endpointsRaw.push({ color: col, c1: colEndpoints[0], c2: colEndpoints[1] });
+            }
+
+            // 打亂顏色編號，增加遊戲難度
+            const uniqueColors = Object.keys(colors).map(Number);
+            const numColors = uniqueColors.length;
+            const newIds = Array.from({length: numColors}, (_, i) => i + 1).sort(() => Math.random() - 0.5);
+            
+            const colorMapping = {};
+            uniqueColors.forEach((col, idx) => { colorMapping[col] = newIds[idx]; });
+
+            // 產生重新映射過的新解答盤面
+            const mappedSolution = Array(R).fill(0).map(() => Array(C).fill(0));
+            for (let r = 0; r < R; r++) {
+                for (let c = 0; c < C; c++) {
+                    if (grid[r][c] !== 0) {
+                        mappedSolution[r][c] = colorMapping[grid[r][c]];
+                    }
+                }
+            }
+
+            // 產生只有端點的題目盤面
+            const rawLevel = Array(R).fill(0).map(() => Array(C).fill(0));
+            endpointsRaw.forEach(ep => {
+                rawLevel[ep.c1.r][ep.c1.c] = colorMapping[ep.color];
+                rawLevel[ep.c2.r][ep.c2.c] = colorMapping[ep.color];
+            });
+
+            return { valid: true, rawLevel, mappedSolution, endpointsRaw };
+        };
+
+        // ==========================================
+        // 🌟 GAS API (已修復跨網域 CORS 問題)
+        // ==========================================
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbwybE6IwZ3M1_SGUnQREGkV8fF9ePsLfR2A-w6KYuYPlYGrYyKoSTGKXvmL6kbWsnpj/exec";
+
+        const apiUploadLevel = async (levelData) => {
+            const response = await fetch(GAS_URL, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: "uploadLevel", ...levelData }) 
+            });
+            return await response.json();
+        };
+
+        const apiSubmitFeedback = async (feedbackData) => {
+            const response = await fetch(GAS_URL, { 
+                method: 'POST', 
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: "submitFeedback", ...feedbackData }) 
+            });
+            return await response.json();
+        };
+
+        const apiGetGallery = async () => {
+            const response = await fetch(GAS_URL);
+            return await response.json();
+        };
+
+        // ==========================================
+        // 遊玩測試器 Component
+        // ==========================================
+        const PlayTester = ({ 
+            rawLevel, solutionGrid, onBack, initialDesigner, 
+            onlineMetadata, onFeedbackSubmit, onWinCallback,
+            onNextChallenge, hasNextChallenge, challengeKey,
+            onNextChapter, hasNextChapter, isCustomPlay
+        }) => {
+            const R = rawLevel.length; const C = rawLevel[0].length;
+            const [grid, setGrid] = useState(() => rawLevel.map((row, r) => row.map((val, c) => ({
+                r, c, isNumber: val !== 0, value: val !== 0 ? val : null, colorId: val !== 0 ? val : null
+            }))));
+            
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [activeColor, setActiveColor] = useState(null);
+            const [isWon, setIsWon] = useState(false);
+            const [designerName, setDesignerName] = useState(initialDesigner || "");
+            const [playerName, setPlayerName] = useState("");
+            const [rating, setRating] = useState(5);
+            const [comment, setComment] = useState("");
+            const [isSubmittingFeed, setIsSubmittingFeed] = useState(false);
+            const [feedSubmitted, setFeedSubmitted] = useState(false);
+
+            const hasDragged = useRef(false);
+            const startCell = useRef(null);
+            const exportPngRef = useRef(null);
+
+            // 當切換題目時重置畫布
+            useEffect(() => {
+                setIsWon(false);
+                setFeedSubmitted(false);
+                setIsDrawing(false);
+                setActiveColor(null);
+                setGrid(rawLevel.map((row, r) => row.map((val, c) => ({
+                    r, c, isNumber: val !== 0, value: val !== 0 ? val : null, colorId: val !== 0 ? val : null
+                }))));
+            }, [challengeKey, rawLevel]);
+
+            // 動態即時驗證過關條件
+            useEffect(() => {
+                if (isWon) return;
+                let isFull = true;
+                for (let r = 0; r < R; r++) {
+                    for (let c = 0; c < C; c++) {
+                        if (!grid[r][c].colorId || grid[r][c].colorId === 0) {
+                            isFull = false; break;
+                        }
+                    }
+                    if (!isFull) break;
+                }
+                if (!isFull) return;
+
+                const currentRaw = grid.map(row => row.map(cell => cell.colorId));
+                const res = validateDesign(currentRaw);
+                
+                if (res.valid) {
+                    let endpointsMatch = true;
+                    for (const ep of res.endpointsRaw) {
+                        if (!grid[ep.c1.r][ep.c1.c].isNumber || !grid[ep.c2.r][ep.c2.c].isNumber) {
+                            endpointsMatch = false;
+                            break;
+                        }
+                    }
+                    if (endpointsMatch) {
+                        setIsWon(true);
+                        if (onWinCallback) onWinCallback();
+                    }
+                }
+            }, [grid, isWon, onWinCallback, R, C]);
+
+            // 自動前進下一關邏輯
+            useEffect(() => {
+                // 只有在教學模式中，且有下一關時才自動跳轉，L5自訂關卡不跳轉
+                if (isWon && !onlineMetadata && hasNextChallenge && !isCustomPlay) {
+                    const timer = setTimeout(() => {
+                        if (onNextChallenge) onNextChallenge();
+                    }, 1500); // 1.5秒後自動下一關
+                    return () => clearTimeout(timer);
+                }
+            }, [isWon, onlineMetadata, hasNextChallenge, onNextChallenge, isCustomPlay]);
+
+            useEffect(() => {
+                const handleGlobalUp = (e) => {
+                    if (!e.target.closest('.play-board')) {
+                        setIsDrawing(false); setActiveColor(null); startCell.current = null;
+                    }
+                };
+                window.addEventListener('pointerup', handleGlobalUp);
+                return () => window.removeEventListener('pointerup', handleGlobalUp);
+            }, []);
+
+            const getCellCoords = (e) => {
+                const cellNode = e.target.closest('[data-row]');
+                if (!cellNode) return null;
+                return { r: parseInt(cellNode.dataset.row, 10), c: parseInt(cellNode.dataset.col, 10) };
+            };
+
+            const paintCell = (r, c, colorId) => {
+                setGrid(prev => {
+                    const newGrid = [...prev]; newGrid[r] = [...newGrid[r]];
+                    newGrid[r][c] = { ...newGrid[r][c], colorId };
+                    return newGrid;
+                });
+            };
+
+            const handlePointerDown = (e) => {
+                if (isWon) return;
+                const coords = getCellCoords(e); if (!coords) return;
+                const { r, c } = coords; const cell = grid[r][c];
+                hasDragged.current = false; startCell.current = { r, c };
+
+                if (cell.isNumber || cell.colorId !== null) {
+                    setIsDrawing(true); setActiveColor(cell.colorId || cell.value); e.target.releasePointerCapture(e.pointerId);
+                }
+            };
+
+            const handlePointerMove = (e) => {
+                if (!isDrawing || activeColor === null || isWon) return;
+                e.preventDefault();
+                const element = document.elementFromPoint(e.clientX, e.clientY);
+                const cellNode = element?.closest?.('[data-row]'); if (!cellNode) return;
+
+                const r = parseInt(cellNode.dataset.row, 10); const c = parseInt(cellNode.dataset.col, 10);
+                if (startCell.current && (startCell.current.r !== r || startCell.current.c !== c)) hasDragged.current = true;
+
+                const cell = grid[r][c];
+                if (!cell.isNumber && cell.colorId !== activeColor) paintCell(r, c, activeColor);
+            };
+
+            const handlePointerUp = (e) => {
+                if (isDrawing && !hasDragged.current && startCell.current && !isWon) {
+                    const { r, c } = startCell.current; const cell = grid[r][c];
+                    if (!cell.isNumber && cell.colorId !== null) paintCell(r, c, null);
+                }
+                setIsDrawing(false); setActiveColor(null); startCell.current = null;
+            };
+
+            const submitFeedbackClick = async () => {
+                if (!playerName.trim()) return alert("請輸入您的暱稱！");
+                setIsSubmittingFeed(true);
+                try {
+                    await onFeedbackSubmit({ levelId: onlineMetadata.id, player: playerName, rating, comment });
+                    setFeedSubmitted(true);
+                } catch (err) { alert("送出失敗，請檢查網路。"); }
+                setIsSubmittingFeed(false);
+            };
+
+            // 匯出相關函數
+            const handleDownloadPNG = async () => {
+                if (!exportPngRef.current) return;
+                try {
+                    const canvas = await html2canvas(exportPngRef.current, { scale: 2 });
+                    const link = document.createElement('a');
+                    link.download = `數連謎題_${designerName || '大師'}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                } catch (err) {
+                    alert("圖片產生失敗，請確認瀏覽器支援度。");
+                }
+            };
+
+            const handleDownloadPPTX = () => {
+                try {
+                    let pres = new PptxGenJS();
+                    let slide = pres.addSlide();
+                    slide.addText("數連謎題 Number Link", { x: 0, y: 0.5, w: "100%", h: 1, fontSize: 40, bold: true, color: '333333', align: 'center' });
+                    slide.addText(`設計者：${designerName || '無名大師'}`, { x: 0, y: 1.4, w: "100%", h: 0.5, fontSize: 20, color: '666666', align: 'center' });
+
+                    const tableData = [];
+                    for (let r = 0; r < R; r++) {
+                        const row = [];
+                        for (let c = 0; c < C; c++) {
+                            const val = rawLevel[r][c];
+                            let cellOpts = {
+                                align: 'center', valign: 'middle', fontSize: 24, bold: true,
+                                color: val !== 0 ? (HEX_COLORS[val] || '333333') : '333333',
+                                fill: 'F8FAFC', border: { type: 'solid', color: '94A3B8', pt: 1 }
+                            };
+                            row.push({ text: val !== 0 ? val.toString() : "", options: cellOpts });
+                        }
+                        tableData.push(row);
+                    }
+                    const maxGridSize = 4.2; 
+                    const cellSize = maxGridSize / Math.max(R, C);
+                    const gridW = cellSize * C; const gridH = cellSize * R;
+                    const startX = (10 - gridW) / 2; const startY = 2.1;
+                    slide.addTable(tableData, { x: startX, y: startY, w: gridW, h: gridH, colW: cellSize, rowH: cellSize });
+                    pres.writeFile({ fileName: `數連謎題_${designerName || '大師'}.pptx` });
+                } catch (err) {
+                    alert("簡報檔產生失敗！請確認是否已連線網路載入套件。");
+                }
+            };
+
+            const handleExportJSON = () => {
+                const exportData = { version: "1.0", designer: designerName || "大師", rawLevel: rawLevel, solutionGrid: solutionGrid };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData));
+                const dlNode = document.createElement('a');
+                dlNode.setAttribute("href", dataStr);
+                dlNode.setAttribute("download", `數連謎題_${designerName || '大師'}.json`);
+                document.body.appendChild(dlNode); dlNode.click(); dlNode.remove();
+            };
+
+            const textSizeClass = C >= 8 ? 'text-lg sm:text-xl' : C >= 6 ? 'text-xl sm:text-2xl' : 'text-2xl sm:text-3xl';
+
+            return (
+                <div className="flex flex-col items-center animate-fade w-full max-w-md mx-auto relative pb-10">
+                    <div className="w-full flex justify-between items-center mb-4">
+                        <button onClick={onBack} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg shadow-sm text-sm transition-colors">◀ 返回</button>
+                        <div className="text-indigo-600 font-bold tracking-widest text-sm bg-indigo-100 px-3 py-1 rounded-full">
+                            {onlineMetadata ? `挑戰：${onlineMetadata.designer}` : (isCustomPlay ? '🎨 試玩作品' : '🎮 教學闖關中')}
+                        </div>
+                    </div>
+
+                    <div 
+                        className={`play-board bg-slate-800 p-2 w-full rounded-lg shadow-lg touch-none transition-all duration-500 ${isWon ? 'ring-4 ring-emerald-400 shadow-emerald-200/50' : ''}`}
+                        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} style={{ touchAction: 'none' }}
+                    >
+                        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${C}, minmax(0, 1fr))` }}>
+                            {grid.map((row, r) => row.map((cell, c) => (
+                                <div key={`${r}-${c}`} data-row={r} data-col={c}
+                                    className={`aspect-square flex items-center justify-center rounded-sm font-black transition-colors duration-75 cursor-pointer ${textSizeClass} ${cell.colorId ? COLOR_MAP[cell.colorId] : 'bg-slate-200'} ${cell.colorId ? TEXT_MAP[cell.colorId] : 'text-transparent'} ${!cell.isNumber && !cell.colorId ? 'hover:bg-slate-300' : ''}`}>
+                                    {cell.isNumber && <div className="w-4/5 h-4/5 flex items-center justify-center bg-black/20 rounded-full shadow-inner">{cell.value}</div>}
+                                </div>
+                            )))}
+                        </div>
+                    </div>
+
+                    {isWon && (
+                        <div className="mt-6 w-full flex flex-col items-center animate-fade">
+                            <div className="w-full p-4 bg-emerald-100 text-emerald-800 rounded-xl text-center font-black text-xl shadow-sm mb-4">
+                                {isCustomPlay ? "🎉 完美破解！這個設計毫無破綻！" : 
+                                (!onlineMetadata && hasNextChallenge ? "🎉 恭喜破關！準備進入下一關..." : "🎉 恭喜本課全數通關！")}
+                            </div>
+                            
+                            {/* 單機闖關模式的控制按鈕 (只有在該章節全破時才顯示選單) */}
+                            {!onlineMetadata && !hasNextChallenge && !isCustomPlay && (
+                                <div className="w-full flex gap-3">
+                                    <button onClick={onBack} className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition-colors shadow-sm">
+                                        ◀ 回到列表
+                                    </button>
+                                    {hasNextChapter && (
+                                        <button onClick={onNextChapter} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl transition-colors shadow-md animate-pulse">
+                                            🚀 進入下一課
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 下載與打包分享 (僅限L5自由創作) */}
+                    {isCustomPlay && isWon && (
+                        <div className="mt-6 bg-white p-5 rounded-xl shadow-md w-full border-t-4 border-indigo-400 animate-fade">
+                            <h3 className="text-lg font-black text-slate-800 mb-3 flex items-center gap-2">📥 下載並分享題目</h3>
+                            <p className="text-sm text-slate-500 mb-4">輸入設計者名稱，把這個乾淨的題目匯出分享給朋友挑戰吧！</p>
+                            <input type="text" placeholder="請輸入設計者姓名 (選填)" value={designerName} onChange={(e) => setDesignerName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 mb-4" />
+                            <div className="flex flex-col gap-3">
+                                <div className="flex gap-3">
+                                    <button onClick={handleDownloadPNG} className="flex-1 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg transition-colors text-sm shadow-sm border border-indigo-200">🖼️ 圖片 (PNG)</button>
+                                    <button onClick={handleDownloadPPTX} className="flex-1 py-3 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg transition-colors text-sm shadow-sm border border-amber-200">📊 簡報 (PPTX)</button>
+                                </div>
+                                <button onClick={handleExportJSON} className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg transition-colors text-sm shadow-md">📄 匯出互動關卡檔 (.json)</button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 評價區域 (僅限線上題庫) */}
+                    {onlineMetadata && isWon && !feedSubmitted && (
+                        <div className="mt-6 bg-amber-50 p-5 rounded-xl shadow-md w-full border-2 border-amber-200 animate-fade">
+                            <h3 className="text-lg font-black text-amber-800 mb-2 text-center">給予原作者評價！</h3>
+                            <div className="star-rating-input mb-4">
+                                {[5, 4, 3, 2, 1].map(star => (
+                                    <React.Fragment key={star}>
+                                        <input type="radio" id={`star${star}`} name="rating" value={star} checked={rating === star} onChange={() => setRating(star)} />
+                                        <label htmlFor={`star${star}`}>★</label>
+                                    </React.Fragment>
+                                ))}
+                            </div>
+                            <input type="text" placeholder="您的挑戰者暱稱" value={playerName} onChange={e => setPlayerName(e.target.value)} className="w-full px-3 py-2 border rounded-lg mb-3 focus:ring-2 focus:ring-amber-400 outline-none" />
+                            <textarea placeholder="寫下您的破關心得..." rows="2" value={comment} onChange={e => setComment(e.target.value)} className="w-full px-3 py-2 border rounded-lg mb-3 focus:ring-2 focus:ring-amber-400 outline-none"></textarea>
+                            <button onClick={submitFeedbackClick} disabled={isSubmittingFeed} className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg transition-colors disabled:opacity-50">{isSubmittingFeed ? "傳送中..." : "送出評分"}</button>
+                        </div>
+                    )}
+
+                    {onlineMetadata && onlineMetadata.feedbacks && onlineMetadata.feedbacks.length > 0 && (
+                        <div className="mt-6 w-full">
+                            <h3 className="font-black text-slate-700 mb-3 flex items-center gap-2">💬 玩家留言板 ({onlineMetadata.feedbacks.length})</h3>
+                            <div className="space-y-3">
+                                {onlineMetadata.feedbacks.map((fb, idx) => (
+                                    <div key={idx} className="bg-white p-3 rounded-lg shadow-sm border border-slate-200">
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="font-bold text-sm text-indigo-700">{fb.player}</span>
+                                            <span className="text-amber-400 text-xs">{"★".repeat(fb.rating)}{"☆".repeat(5-fb.rating)}</span>
+                                        </div>
+                                        <p className="text-sm text-slate-600 whitespace-pre-wrap">{fb.comment || "沒有留下文字評論"}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 隱藏的繪圖用畫布 (提供給 PNG 使用) */}
+                    <div style={{ position: 'fixed', left: '-5000px', top: '0', zIndex: -10 }}>
+                        <div ref={exportPngRef} className="bg-white p-12" style={{ width: '800px' }}>
+                            <h1 className="text-5xl font-black text-center mb-4 text-slate-800 tracking-widest">數連 Number Link</h1>
+                            <h2 className="text-2xl text-center mb-10 text-slate-500 font-bold tracking-wide">設計者：{designerName || '無名大師'}</h2>
+                            <div className="mx-auto" style={{ 
+                                display: 'grid', gap: '4px', gridTemplateColumns: `repeat(${C}, minmax(0, 1fr))`, 
+                                width: '600px', height: '600px', backgroundColor: '#1E293B', padding: '8px', borderRadius: '12px'
+                            }}>
+                                {rawLevel.map((row, r) => row.map((val, c) => (
+                                    <div key={`ex-${r}-${c}`} className="flex items-center justify-center bg-slate-200 rounded-sm">
+                                        {val !== 0 && (
+                                            <div className="flex items-center justify-center bg-white/95 rounded-full shadow-md text-5xl font-black text-slate-800" style={{ width: '80%', height: '80%' }}>{val}</div>
+                                        )}
+                                    </div>
+                                )))}
+                            </div>
+                            <div className="mt-12 text-center text-slate-400 font-bold text-lg">玩法：把相同的數字連起來，線不可交叉，必須填滿所有空格！</div>
+                        </div>
+                    </div>
+
+                </div>
+            );
+        };
+
+        // ==========================================
+        // 主應用程式 App
+        // ==========================================
+        function App() {
+            const [mainTab, setMainTab] = useState('learning'); 
+            const [mode, setMode] = useState('menu'); 
+            const [completedLevels, setCompletedLevels] = useState(new Set());
+            const isL5Unlocked = completedLevels.size >= 12;
+
+            const [stages, setStages] = useState(INITIAL_STAGES);
+            const [stageIdx, setStageIdx] = useState(0); 
+            const [customSize, setCustomSize] = useState(6);
+            
+            const initGrid = (size) => Array(size).fill(0).map(() => Array(size).fill(0));
+            const [designGrid, setDesignGrid] = useState(() => initGrid(6));
+            const [paintColor, setPaintColor] = useState(1);
+            const [isPainting, setIsPainting] = useState(false);
+            const eraseModeRef = useRef(false);
+            const [history, setHistory] = useState([]);
+            
+            const [currentChallenge, setCurrentChallenge] = useState(null); 
+            const [playLevel, setPlayLevel] = useState(null);
+            const [playSolution, setPlaySolution] = useState(null);
+            const [onlineMetadata, setOnlineMetadata] = useState(null);
+            
+            const [errorMsg, setErrorMsg] = useState("");
+            
+            const [onlineLevels, setOnlineLevels] = useState([]);
+            const [isLoadingGallery, setIsLoadingGallery] = useState(false);
+            const [showUploadModal, setShowUploadModal] = useState(false);
+            const [uploadForm, setUploadForm] = useState({ designer: "", title: "" });
+            const [isUploading, setIsUploading] = useState(false);
+
+            const fetchGalleryData = async () => {
+                setIsLoadingGallery(true);
+                try { const data = await apiGetGallery(); setOnlineLevels(data); } catch (err) { alert("無法載入題庫。"); }
+                setIsLoadingGallery(false);
+            };
+
+            const handleStartChallenge = (sIdx, exIdx) => {
+                const exGrid = INITIAL_STAGES[sIdx].examples[exIdx];
+                const result = validateDesign(exGrid); 
+                if (result.valid) {
+                    setPlayLevel(result.rawLevel); 
+                    setPlaySolution(result.mappedSolution); 
+                    setOnlineMetadata(null);
+                    setCurrentChallenge({ sIdx, exIdx }); 
+                    setMode('play');
+                } else { alert("系統範例錯誤：" + result.msg); }
+            };
+
+            const handleChallengeWin = () => {
+                if (currentChallenge) {
+                    setCompletedLevels(prev => {
+                        const next = new Set(prev);
+                        next.add(`${currentChallenge.sIdx}-${currentChallenge.exIdx}`);
+                        return next;
+                    });
+                }
+            };
+
+            const handleNextChallenge = () => {
+                if (!currentChallenge) return;
+                const { sIdx, exIdx } = currentChallenge;
+                
+                if (exIdx + 1 < INITIAL_STAGES[sIdx].examples.length) {
+                    setTimeout(() => {
+                        handleStartChallenge(sIdx, exIdx + 1); 
+                    }, 50);
+                }
+            };
+
+            const hasNextChallenge = useMemo(() => {
+                if (!currentChallenge) return false;
+                return currentChallenge.exIdx + 1 < INITIAL_STAGES[currentChallenge.sIdx].examples.length;
+            }, [currentChallenge]);
+
+            const hasNextChapter = useMemo(() => {
+                if (!currentChallenge) return false;
+                return currentChallenge.sIdx + 1 < 4; 
+            }, [currentChallenge]);
+
+            const handleNextChapter = () => {
+                if (!currentChallenge) return;
+                const nextSIdx = currentChallenge.sIdx + 1;
+                setStageIdx(nextSIdx);
+                setTimeout(() => {
+                    handleStartChallenge(nextSIdx, 0); 
+                }, 50);
+            };
+
+            const currentChallengeKey = useMemo(() => {
+                return currentChallenge ? `challenge-${currentChallenge.sIdx}-${currentChallenge.exIdx}` : (onlineMetadata ? `online-${onlineMetadata.id}` : 'custom-play');
+            }, [currentChallenge, onlineMetadata]);
+
+            const saveHistory = () => setHistory(prev => [...prev, JSON.parse(JSON.stringify(designGrid))]);
+            
+            const handleUndo = () => {
+                if (history.length > 0) {
+                    setDesignGrid(history[history.length - 1]);
+                    setHistory(prev => prev.slice(0, -1));
+                }
+            };
+
+            const handleDesignPointerDown = (r, c, e) => { 
+                setIsPainting(true); saveHistory(); 
+                if (e.button === 2) { eraseModeRef.current = true; updateDesignGrid(r, c, 0); } 
+                else { eraseModeRef.current = false; updateDesignGrid(r, c, paintColor); }
+            };
+            const handleDesignPointerEnter = (r, c, e) => { 
+                if (isPainting || e.buttons === 1 || e.buttons === 2) updateDesignGrid(r, c, (e.buttons === 2 || eraseModeRef.current) ? 0 : paintColor); 
+            };
+            const handleDesignTouchMove = (e) => {
+                if(!isPainting) return; e.preventDefault(); 
+                const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+                if (el && el.dataset.row) updateDesignGrid(parseInt(el.dataset.row), parseInt(el.dataset.col), eraseModeRef.current ? 0 : paintColor);
+            };
+            const handleDesignPointerUp = () => { setIsPainting(false); eraseModeRef.current = false; };
+            const updateDesignGrid = (r, c, colorOverride) => {
+                setDesignGrid(prev => {
+                    const next = [...prev]; next[r] = [...next[r]]; next[r][c] = colorOverride !== undefined ? colorOverride : paintColor;
+                    return next;
+                });
+            };
+
+            useEffect(() => {
+                window.addEventListener('mouseup', handleDesignPointerUp);
+                window.addEventListener('touchend', handleDesignPointerUp);
+                return () => { window.removeEventListener('mouseup', handleDesignPointerUp); window.removeEventListener('touchend', handleDesignPointerUp); };
+            }, []);
+
+            const handleSizeChange = (e) => {
+                const newSize = parseInt(e.target.value);
+                setCustomSize(newSize);
+                setDesignGrid(initGrid(newSize));
+                setErrorMsg("");
+                setHistory([]);
+            };
+
+            const handleCloudUpload = async () => {
+                if(!uploadForm.designer.trim() || !uploadForm.title.trim()) return alert("請填寫姓名與關卡名稱！");
+                const result = validateDesign(designGrid);
+                if(!result.valid) return setErrorMsg("設計有誤：" + result.msg);
+                
+                setIsUploading(true);
+                try {
+                    await apiUploadLevel({ designer: uploadForm.designer, title: uploadForm.title, size: designGrid.length, rawLevel: result.rawLevel, solutionGrid: designGrid });
+                    alert("✅ 成功發佈！"); setShowUploadModal(false); 
+                    setMode('menu'); setMainTab('gallery'); fetchGalleryData();
+                } catch (err) { alert("上傳失敗，請確認跨網域設定。"); }
+                setIsUploading(false);
+            };
+
+            const allTools = [...Array.from({length: Math.min(20, Math.floor((customSize * customSize) / 3))}, (_, i) => i + 1), 0];
+
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header Tabs */}
+                    <div className="bg-slate-800 text-slate-100 py-4 px-6 shadow-md flex justify-between items-center sticky top-0 z-50">
+                        <h1 className="text-xl font-black text-amber-400 tracking-wider">✍️ 數連關卡設計大師</h1>
+                        <div className="flex bg-slate-700 p-1 rounded-xl">
+                            <button onClick={() => {setMainTab('learning'); setMode('menu');}} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${mainTab === 'learning' ? 'bg-indigo-500 text-white shadow' : 'text-slate-300 hover:text-white'}`}>
+                                🎓 教學闖關
+                            </button>
+                            <button onClick={() => {setMainTab('creative'); setMode('design');}} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${mainTab === 'creative' ? 'bg-emerald-500 text-white shadow' : 'text-slate-300 hover:text-white'} flex items-center gap-1`}>
+                                {isL5Unlocked ? '🎨 自由創作' : '🔒 自由創作'}
+                            </button>
+                            <button onClick={() => {setMainTab('gallery'); setMode('menu'); fetchGalleryData();}} className={`px-4 py-2 text-sm font-bold rounded-lg transition-all ${mainTab === 'gallery' ? 'bg-indigo-500 text-white shadow' : 'text-slate-300 hover:text-white'}`}>
+                                🌍 線上題庫
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 🎓 模式: 教學闖關 */}
+                    {mainTab === 'learning' && mode !== 'play' && (
+                        <div className="max-w-5xl mx-auto w-full mt-8 px-4 flex flex-col md:flex-row gap-6 animate-fade">
+                            <div className="w-full md:w-1/3 bg-white p-5 rounded-2xl shadow-sm border-t-4 border-indigo-500">
+                                <h2 className="font-black text-slate-700 mb-4 text-lg">選擇章節</h2>
+                                <div className="space-y-2">
+                                    {INITIAL_STAGES.slice(0, 4).map((s, idx) => (
+                                        <button key={s.id} onClick={() => setStageIdx(idx)} className={`w-full text-left px-4 py-3 font-bold rounded-xl transition-all ${stageIdx === idx ? 'bg-indigo-100 text-indigo-700 border-2 border-indigo-300' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border-2 border-transparent'}`}>
+                                            {s.title}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="mt-8 p-4 bg-slate-100 rounded-xl">
+                                    <div className="text-sm font-bold text-slate-500 mb-2">總通關進度</div>
+                                    <div className="w-full bg-slate-200 rounded-full h-3 mb-1">
+                                        <div className="bg-emerald-500 h-3 rounded-full transition-all duration-1000" style={{ width: `${(completedLevels.size / 12) * 100}%` }}></div>
+                                    </div>
+                                    <div className="text-right text-sm font-bold text-emerald-600">{completedLevels.size} / 12</div>
+                                </div>
+                            </div>
+                            
+                            <div className="w-full md:w-2/3 bg-white p-6 rounded-2xl shadow-sm">
+                                <h2 className="text-2xl font-black text-slate-800 mb-3">{INITIAL_STAGES[stageIdx].title}</h2>
+                                <p className="text-slate-600 mb-8 leading-relaxed">{INITIAL_STAGES[stageIdx].desc}</p>
+                                
+                                <div className="space-y-4">
+                                    {INITIAL_STAGES[stageIdx].examples.map((_, exIdx) => {
+                                        const isDone = completedLevels.has(`${stageIdx}-${exIdx}`);
+                                        return (
+                                            <div key={exIdx} className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-100 bg-slate-50 hover:border-indigo-200 transition-colors">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="text-xl">🎮</div>
+                                                    <div className="font-bold text-slate-700 text-lg">挑戰 {exIdx + 1}</div>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className={`text-sm font-bold ${isDone ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                                        {isDone ? '✅ 已通關' : '尚未通關'}
+                                                    </span>
+                                                    <button onClick={() => handleStartChallenge(stageIdx, exIdx)} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm">
+                                                        開始
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🎨 模式: 自由創作 */}
+                    {mainTab === 'creative' && mode !== 'play' && (
+                        <div className="max-w-5xl mx-auto w-full mt-8 px-4 relative animate-fade">
+                            {!isL5Unlocked && (
+                                <div className="absolute inset-0 z-10 glass-lock rounded-2xl flex flex-col items-center justify-center p-6 text-center">
+                                    <div className="text-6xl mb-4">🔒</div>
+                                    <h2 className="text-2xl font-black text-slate-800 mb-2">大師之路尚未開啟</h2>
+                                    <p className="text-slate-600 font-bold">請先於「教學闖關」完成所有 12 道關卡試煉，<br/>才能解鎖並發佈您的自訂關卡！</p>
+                                    <div className="mt-4 px-4 py-2 bg-slate-200 text-slate-500 rounded-full font-bold text-sm">
+                                        目前進度：{completedLevels.size} / 12
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex flex-col lg:flex-row gap-6">
+                                <div className="w-full lg:w-1/3 bg-white p-5 rounded-2xl shadow-sm border-t-4 border-emerald-400">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-2">第五課：自由創作大師</h2>
+                                    <p className="text-sm text-slate-600 mb-6">設定盤面大小，創造您的終極關卡！</p>
+                                    
+                                    <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                        <label className="block text-sm font-bold text-slate-700 mb-2">盤面尺寸: {customSize} x {customSize}</label>
+                                        <input type="range" min="5" max="10" step="1" value={customSize} onChange={handleSizeChange} className="w-full accent-emerald-500" />
+                                    </div>
+
+                                    <div className="flex gap-2 mb-4">
+                                        <button onClick={handleUndo} disabled={history.length===0} className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg disabled:opacity-50">↩️ 復原</button>
+                                        <button onClick={() => {saveHistory(); setDesignGrid(initGrid(customSize));}} className="flex-1 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg">🗑️ 清除</button>
+                                    </div>
+
+                                    <button onClick={() => {
+                                        const res = validateDesign(designGrid);
+                                        if(res.valid) { 
+                                            setPlayLevel(res.rawLevel); 
+                                            setPlaySolution(res.mappedSolution); 
+                                            setMode('play'); 
+                                        }
+                                        else setErrorMsg(res.msg);
+                                    }} className="w-full py-3 mb-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md">
+                                        🎮 檢查並試玩
+                                    </button>
+                                    <button onClick={() => {
+                                        if(validateDesign(designGrid).valid) setShowUploadModal(true); else setErrorMsg("請先繪製正確盤面！");
+                                    }} className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-md">
+                                        ☁️ 發佈至線上題庫
+                                    </button>
+                                </div>
+
+                                <div className="w-full lg:w-2/3 flex flex-col items-center">
+                                    {errorMsg && <div className="mb-4 w-full p-3 bg-red-100 text-red-700 font-bold rounded">⚠️ {errorMsg}</div>}
+                                    <div className="bg-slate-800 p-2 rounded-xl shadow-xl w-full max-w-md touch-none" onContextMenu={e=>e.preventDefault()} onTouchMove={handleDesignTouchMove}>
+                                        <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${customSize}, minmax(0, 1fr))` }}>
+                                            {designGrid.map((row, r) => row.map((col, c) => (
+                                                <div key={`${r}-${c}`} data-row={r} data-col={c} onPointerDown={e => handleDesignPointerDown(r,c,e)} onMouseEnter={e => handleDesignPointerEnter(r,c,e)}
+                                                    className={`aspect-square rounded-sm cursor-pointer transition-colors ${col === 0 ? 'bg-slate-200 hover:bg-slate-300' : COLOR_MAP[col]}`}></div>
+                                            )))}
+                                        </div>
+                                    </div>
+                                    <div className="mt-6 bg-white p-4 rounded-xl shadow-sm w-full max-w-md">
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            {allTools.map(tool => (
+                                                <button key={tool} onClick={() => setPaintColor(tool)} className={`w-10 h-10 rounded-full font-bold transition-transform ${tool===0?'bg-slate-200 text-slate-600':COLOR_MAP[tool]} ${tool!==0?TEXT_MAP[tool]:''} ${paintColor===tool?'ring-4 ring-emerald-400 scale-110 shadow-lg':'opacity-80 hover:scale-105'}`}>
+                                                    {tool===0?'🧹':tool}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 🌍 模式: 線上題庫 */}
+                    {mainTab === 'gallery' && mode !== 'play' && (
+                        <div className="max-w-5xl mx-auto w-full mt-8 px-4 animate-fade">
+                            <div className="flex justify-between items-end mb-6 border-b-2 border-slate-200 pb-4">
+                                <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">🌍 社群題庫</h2>
+                                <button onClick={fetchGalleryData} className="px-4 py-2 bg-slate-200 hover:bg-slate-300 font-bold rounded-lg text-sm text-slate-700">🔄 重新整理</button>
+                            </div>
+                            {isLoadingGallery ? <div className="text-center py-10 font-bold text-slate-400">載入中...</div> : onlineLevels.length === 0 ? <div className="text-center py-10 font-bold text-slate-400">尚無關卡，前往「自由創作」成為第一人！</div> : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                    {onlineLevels.map(lvl => {
+                                        const avg = lvl.feedbacks && lvl.feedbacks.length ? (lvl.feedbacks.reduce((a,c)=>a+c.rating,0)/lvl.feedbacks.length).toFixed(1) : 0;
+                                        return (
+                                            <div key={lvl.id} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex flex-col hover:shadow-md transition-all">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h3 className="font-bold text-lg text-indigo-700 truncate">{lvl.title}</h3>
+                                                    <span className="bg-slate-100 text-slate-500 text-xs px-2 py-1 rounded font-bold">{lvl.size}x{lvl.size}</span>
+                                                </div>
+                                                <div className="text-sm text-slate-600 mb-4 flex-1">作者：<span className="font-bold text-slate-800">{lvl.designer}</span></div>
+                                                <div className="text-amber-500 text-sm font-bold mb-4">★ {avg>0?avg:"尚無評分"} <span className="text-slate-400 text-xs">({lvl.feedbacks?.length||0})</span></div>
+                                                <button onClick={() => {setOnlineMetadata(lvl); setPlayLevel(lvl.rawLevel); setPlaySolution(lvl.solutionGrid); setMode('play');}} className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg">🎮 挑戰</button>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 共用: PlayTester */}
+                    {mode === 'play' && (
+                        <div className="mt-8">
+                            <PlayTester 
+                                key={currentChallengeKey}
+                                challengeKey={currentChallengeKey} 
+                                rawLevel={playLevel} 
+                                solutionGrid={playSolution} 
+                                onBack={() => { setMode(mainTab==='learning'?'menu':mainTab==='creative'?'design':'menu'); setOnlineMetadata(null); setCurrentChallenge(null); }}
+                                onlineMetadata={onlineMetadata} 
+                                onWinCallback={handleChallengeWin} 
+                                onNextChallenge={handleNextChallenge} 
+                                hasNextChallenge={hasNextChallenge}
+                                onNextChapter={handleNextChapter}
+                                hasNextChapter={hasNextChapter}
+                                isCustomPlay={!currentChallenge && !onlineMetadata}
+                                onFeedbackSubmit={async(d) => { await apiSubmitFeedback(d); setOnlineMetadata(p=>({...p, feedbacks: [...(p.feedbacks||[]), {player: d.player, rating: d.rating, comment: d.comment}]})); }}
+                            />
+                        </div>
+                    )}
+
+                    {/* 上傳 Modal */}
+                    {showUploadModal && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade">
+                            <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
+                                <h2 className="text-xl font-black text-emerald-700 mb-4">☁️ 發佈至題庫</h2>
+                                <label className="text-sm font-bold text-slate-600 mb-1">您的暱稱：</label>
+                                <input type="text" value={uploadForm.designer} onChange={e=>setUploadForm({...uploadForm, designer: e.target.value})} className="w-full px-3 py-2 border rounded-lg mb-4" placeholder="例如：王小明" />
+                                <label className="text-sm font-bold text-slate-600 mb-1">關卡名稱：</label>
+                                <input type="text" value={uploadForm.title} onChange={e=>setUploadForm({...uploadForm, title: e.target.value})} className="w-full px-3 py-2 border rounded-lg mb-6" placeholder="例如：終極迷宮" />
+                                <div className="flex gap-2">
+                                    <button onClick={()=>setShowUploadModal(false)} className="flex-1 py-2 bg-slate-200 font-bold rounded-lg">取消</button>
+                                    <button onClick={handleCloudUpload} disabled={isUploading} className="flex-1 py-2 bg-emerald-500 text-white font-bold rounded-lg">{isUploading?"上傳中...":"發佈"}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

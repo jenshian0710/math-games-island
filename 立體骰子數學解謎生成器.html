@@ -1,0 +1,1997 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>立體骰子數學解謎生成器</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for 3D rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls for camera interaction -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- html2canvas for image export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- jsPDF for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- PptxGenJS (Bundle version to avoid missing dependencies) -->
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 400px; /* Default height */
+            background-color: #1e1e2f; /* Dark background for 3D view */
+            border-radius: 0.5rem;
+            overflow: hidden;
+            position: relative;
+        }
+        /* Style for the grid path UI */
+        .grid-cell {
+            width: 40px;
+            height: 40px;
+            border: 1px solid #d1d5db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            background-color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .grid-cell.active-path {
+            background-color: #93c5fd;
+            border-color: #3b82f6;
+        }
+        .grid-cell.start-cell {
+            background-color: #86efac;
+            border-color: #22c55e;
+        }
+        .grid-cell.var-cell {
+            background-color: #fca5a5;
+            border-color: #ef4444;
+            color: white;
+        }
+        .grid-cell.end-cell {
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(0,0,0,0.1) 5px, rgba(0,0,0,0.1) 10px);
+        }
+        .grid-cell.selected-cell {
+            box-shadow: inset 0 0 0 3px #fbbf24; /* Subtle inner highlight instead of outline */
+        }
+        
+        #export-view {
+            position: absolute;
+            left: -9999px; /* Hide from viewport but keep rendering */
+            width: 1280px;
+            height: 720px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 40px;
+            display: flex;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif; /* Fallback for export */
+        }
+        
+        #export-3d-capture {
+            width: 60%;
+            height: 100%;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        #export-questions-panel {
+            width: 40%;
+            padding-left: 30px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .export-question-item {
+            background: linear-gradient(90deg, rgba(59,130,246,0.3) 0%, rgba(59,130,246,0) 100%);
+            border-left: 4px solid #3b82f6;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+        }
+        .export-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #60a5fa;
+            margin-bottom: 30px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Custom Context Menu */
+        #custom-context-menu {
+            display: none;
+            position: absolute;
+            background-color: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 10px;
+            z-index: 1000;
+            width: 220px;
+        }
+        .menu-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #4b5563;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 4px;
+        }
+        .var-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        .var-btn {
+            background-color: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 4px 0;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .var-btn:hover {
+            background-color: #dbeafe;
+            border-color: #93c5fd;
+            color: #1d4ed8;
+        }
+        .custom-var-row {
+            display: flex;
+            gap: 4px;
+        }
+        .custom-var-input {
+            flex: 1;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 4px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .clear-var-btn {
+            margin-top: 8px;
+            width: 100%;
+            background-color: #fee2e2;
+            color: #ef4444;
+            border: 1px solid #fecaca;
+            border-radius: 4px;
+            padding: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .clear-var-btn:hover {
+            background-color: #fecaca;
+            color: #b91c1c;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+<!-- Custom Context Menu UI -->
+<div id="custom-context-menu">
+    <div class="menu-title">設定變數</div>
+    <div class="var-grid">
+        <button class="var-btn" data-val="A">A</button>
+        <button class="var-btn" data-val="B">B</button>
+        <button class="var-btn" data-val="C">C</button>
+        <button class="var-btn" data-val="D">D</button>
+        <button class="var-btn" data-val="E">E</button>
+        <button class="var-btn" data-val="F">F</button>
+    </div>
+    <div class="menu-title" style="margin-top: 8px;">自訂 / 其他</div>
+    <div class="custom-var-row">
+        <input type="text" id="context-custom-input" class="custom-var-input" placeholder="單一字母" maxlength="1">
+        <button id="context-custom-btn" class="bg-blue-500 text-white px-3 rounded text-sm hover:bg-blue-600">確定</button>
+    </div>
+    <button id="context-clear-btn" class="clear-var-btn">清除此格變數</button>
+</div>
+
+<div class="max-w-7xl mx-auto p-4 sm:p-6">
+    <div class="flex justify-between items-end mb-6">
+        <h1 class="text-3xl font-bold text-blue-800">立體骰子數學解謎生成器</h1>
+        <div class="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
+            網頁設計者：林口國中 李政憲 老師
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left Column: Controls & Configuration -->
+        <div class="lg:col-span-1 space-y-6">
+            
+            <!-- Dice Configuration Panel -->
+            <div class="bg-white p-5 rounded-xl shadow-md border border-gray-100">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">骰子設定</h2>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">手系 (點數分佈)</label>
+                        <select id="dice-handedness" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2 border">
+                            <option value="right">右手系 (標準: 1-2-3 逆時針)</option>
+                            <option value="left">左手系 (1-2-3 順時針)</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">對立面相加固定為 7。</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">計算與觀察面</label>
+                        <select id="dice-calc-face" class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-2 border text-blue-700 font-medium">
+                            <option value="top">朝上面 (預設)</option>
+                            <option value="bottom">朝下面 (與地面接觸面)</option>
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">初始朝上面</label>
+                            <select id="dice-top-face" class="w-full border-gray-300 rounded-md shadow-sm p-2 border">
+                                <option value="1" selected>1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">初始朝前面 (朝向觀察者)</label>
+                            <select id="dice-front-face" class="w-full border-gray-300 rounded-md shadow-sm p-2 border">
+                                <option value="2">2</option>
+                                <option value="3" selected>3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <!-- JS will validate valid pairs (cannot be same or opposite of top) -->
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Appearance Settings Panel -->
+            <div class="bg-white p-5 rounded-xl shadow-md border border-gray-100">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">外觀設定</h2>
+                
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">背景顏色</label>
+                        <input type="color" id="color-bg" value="#1e1e2f" class="w-full h-8 border border-gray-300 rounded cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">路徑格子顏色</label>
+                        <input type="color" id="color-path-tile" value="#3b82f6" class="w-full h-8 border border-gray-300 rounded cursor-pointer">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">路徑連線顏色</label>
+                        <input type="color" id="color-path-line" value="#93c5fd" class="w-full h-8 border border-gray-300 rounded cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Path Configuration Panel -->
+            <div class="bg-white p-5 rounded-xl shadow-md border border-gray-100">
+                <h2 class="text-xl font-semibold mb-2 text-gray-700 border-b pb-2 flex justify-between items-center">
+                    <span>路徑與變數設定</span>
+                    <div class="flex gap-2">
+                        <button id="undo-path-btn" class="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded hover:bg-yellow-200">回退一步</button>
+                        <button id="clear-path-btn" class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200">清除路徑</button>
+                    </div>
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-3 mb-4 p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">網格列數 (行)</label>
+                        <input type="number" id="grid-rows" value="6" min="3" max="15" class="w-full border-gray-300 rounded shadow-sm p-1 text-sm border">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">網格欄數 (列)</label>
+                        <input type="number" id="grid-cols" value="10" min="3" max="20" class="w-full border-gray-300 rounded shadow-sm p-1 text-sm border">
+                    </div>
+                    <div class="col-span-2">
+                        <button id="update-grid-btn" class="w-full bg-gray-200 text-gray-700 text-xs py-1 rounded hover:bg-gray-300 transition font-semibold">更新網格尺寸</button>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 text-blue-800 text-xs p-3 rounded mb-4 border border-blue-100">
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><strong>左鍵點擊空位：</strong>建立連續路徑。</li>
+                        <li><strong>右鍵點擊路徑：</strong>快速設定變數 (A, B, C...)。</li>
+                    </ul>
+                </div>
+                
+                <!-- 2D Grid UI for Path Planning -->
+                <div class="flex justify-center mb-4 overflow-x-auto relative">
+                    <div id="grid-container" class="grid bg-gray-50 p-2 rounded border border-gray-200 shadow-inner">
+                        <!-- Grid cells will be generated by JS -->
+                    </div>
+                </div>
+                
+                <div class="text-sm border-t pt-3">
+                    <strong>已定義變數:</strong> <span id="defined-vars-list" class="text-blue-600">無</span>
+                </div>
+            </div>
+            
+            <!-- Export Panel -->
+            <div class="bg-white p-5 rounded-xl shadow-md border border-gray-100">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2">輸出</h2>
+                <div class="grid grid-cols-3 gap-2">
+                    <button id="export-jpg-btn" class="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 border rounded-lg transition">
+                        <svg class="w-6 h-6 text-gray-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="text-xs font-medium">JPG (題/答)</span>
+                    </button>
+                    <button id="export-pdf-btn" class="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 border rounded-lg transition">
+                        <svg class="w-6 h-6 text-gray-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        <span class="text-xs font-medium">PDF</span>
+                    </button>
+                    <button id="export-ppt-btn" class="flex flex-col items-center justify-center p-3 bg-gray-50 hover:bg-gray-100 border rounded-lg transition">
+                        <svg class="w-6 h-6 text-gray-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                        <span class="text-xs font-medium">PPTX</span>
+                    </button>
+                </div>
+                <div id="export-loader" class="loader mt-4 mx-auto"></div>
+                <p id="export-status" class="text-xs text-center text-gray-500 mt-2 hidden">處理中...</p>
+            </div>
+        </div>
+
+        <!-- Right Column: 3D Preview & Questions -->
+        <div class="lg:col-span-2 space-y-6">
+            
+            <!-- 3D Canvas -->
+            <div class="bg-white p-2 rounded-xl shadow-md border border-gray-100">
+                <div class="flex justify-between items-center px-4 py-2 border-b mb-2">
+                    <div class="flex items-center gap-4">
+                        <h2 class="text-lg font-semibold text-gray-700">3D 動態預覽</h2>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-gray-500">滾動速度</span>
+                            <input type="range" id="anim-speed" min="100" max="1000" value="500" class="w-24 accent-indigo-600" style="direction: rtl;">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="show-path-numbers" class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                            <span class="text-sm text-gray-700 font-medium">保留骰子面數值</span>
+                        </label>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="play-anim-btn" class="text-sm bg-indigo-100 text-indigo-700 px-3 py-1 rounded hover:bg-indigo-200 transition font-medium flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            播放滾動
+                        </button>
+                        <button id="pause-anim-btn" class="text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded hover:bg-yellow-200 transition font-medium flex items-center hidden">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            暫停
+                        </button>
+                        <button id="reset-dice-btn" class="text-sm bg-gray-100 text-gray-700 px-3 py-1 rounded hover:bg-gray-200 transition font-medium flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                            回到原位
+                        </button>
+                        <button id="reset-cam-btn" class="text-sm text-blue-600 hover:text-blue-800 px-2">重設視角</button>
+                    </div>
+                </div>
+                <div id="canvas-container" class="cursor-move">
+                    <!-- Three.js canvas injected here -->
+                </div>
+                <div class="px-4 py-2 text-xs text-gray-500 text-center">
+                    滑鼠左鍵拖曳旋轉視角，右鍵拖曳平移，滾輪縮放。
+                </div>
+            </div>
+
+            <!-- Questions Configuration Panel -->
+            <div class="bg-white p-5 rounded-xl shadow-md border border-gray-100">
+                <div class="flex justify-between items-center mb-4 border-b pb-2">
+                    <h2 class="text-xl font-semibold text-gray-700">題目設定 (最多5題)</h2>
+                    <button id="add-question-btn" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        新增題目
+                    </button>
+                </div>
+                
+                <div id="questions-container" class="space-y-3">
+                    <!-- Questions added dynamically -->
+                </div>
+                
+                <!-- Calculation Simulator -->
+                <div class="mt-6 p-4 bg-gray-50 border rounded-lg">
+                    <h3 class="text-md font-semibold mb-2 flex items-center">
+                        <svg class="w-5 h-5 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        答案預覽計算器
+                    </h3>
+                    <div id="vars-values-preview" class="flex flex-wrap gap-2 mb-4 text-sm">
+                        <!-- Simulated variable values will appear here -->
+                    </div>
+                    <div id="answers-preview" class="space-y-2 text-sm font-mono bg-white p-4 rounded border shadow-sm">
+                        <!-- Calculated answers will appear here -->
+                        請先設定路徑、變數與題目以計算答案。
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Hidden area for high-res export rendering -->
+<div id="export-view">
+    <div id="export-3d-capture">
+        <img id="export-image-holder" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+    </div>
+    <div id="export-questions-panel">
+        <div class="export-title">題目</div>
+        <div id="export-questions-list">
+            <!-- Questions injected here for export -->
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- State and Constants ---
+    const STATE = {
+        gridSize: { cols: 10, rows: 6 },
+        path: [], // Array of {x, y, computedFaceVal: number}
+        variables: {}, // Map of 'VarName' -> {x, y, computedValue}
+        questions: [], // Array of string expressions
+        diceConfig: {
+            handedness: 'right', // 'right' or 'left'
+            topFace: 1,
+            frontFace: 3,
+            calcFace: 'top'
+        },
+        appearance: {
+            bg: '#1e1e2f',
+            pathTile: '#3b82f6',
+            pathLine: '#93c5fd'
+        },
+        selectedCell: null,
+        simulation: {
+            vars: {},
+            answers: []
+        },
+        animation: {
+            isAnimating: false,
+            isPaused: false,
+            startTime: 0,
+            pausedTime: 0,
+            steps: [],
+            durationPerStep: 500
+        },
+        showPathNumbers: false
+    };
+
+    const MAX_QUESTIONS = 5;
+    let contextMenuTarget = null; // Store which cell is being edited by context menu
+    
+    // Valid dice face pairs (Opposite faces sum to 7)
+    function getValidFrontFaces(topFace) {
+        const top = parseInt(topFace);
+        const bottom = 7 - top;
+        const valid = [];
+        for (let i = 1; i <= 6; i++) {
+            if (i !== top && i !== bottom) {
+                valid.push(i);
+            }
+        }
+        return valid;
+    }
+
+    // --- DOM Elements ---
+    const els = {
+        gridContainer: document.getElementById('grid-container'),
+        clearPathBtn: document.getElementById('clear-path-btn'),
+        undoPathBtn: document.getElementById('undo-path-btn'),
+        updateGridBtn: document.getElementById('update-grid-btn'),
+        gridRowsInput: document.getElementById('grid-rows'),
+        gridColsInput: document.getElementById('grid-cols'),
+        definedVarsList: document.getElementById('defined-vars-list'),
+        
+        diceHandedness: document.getElementById('dice-handedness'),
+        diceTopFace: document.getElementById('dice-top-face'),
+        diceFrontFace: document.getElementById('dice-front-face'),
+        diceCalcFace: document.getElementById('dice-calc-face'),
+        
+        colorBg: document.getElementById('color-bg'),
+        colorPathTile: document.getElementById('color-path-tile'),
+        colorPathLine: document.getElementById('color-path-line'),
+        
+        addQuestionBtn: document.getElementById('add-question-btn'),
+        questionsContainer: document.getElementById('questions-container'),
+        
+        varsValuesPreview: document.getElementById('vars-values-preview'),
+        answersPreview: document.getElementById('answers-preview'),
+        
+        canvasContainer: document.getElementById('canvas-container'),
+        resetCamBtn: document.getElementById('reset-cam-btn'),
+        playAnimBtn: document.getElementById('play-anim-btn'),
+        pauseAnimBtn: document.getElementById('pause-anim-btn'),
+        resetDiceBtn: document.getElementById('reset-dice-btn'),
+        animSpeedSlider: document.getElementById('anim-speed'),
+        showPathNumbersCb: document.getElementById('show-path-numbers'),
+        
+        exportJpgBtn: document.getElementById('export-jpg-btn'),
+        exportPdfBtn: document.getElementById('export-pdf-btn'),
+        exportPptBtn: document.getElementById('export-ppt-btn'),
+        exportLoader: document.getElementById('export-loader'),
+        exportStatus: document.getElementById('export-status'),
+
+        contextMenu: document.getElementById('custom-context-menu'),
+        contextCustomInput: document.getElementById('context-custom-input'),
+        contextCustomBtn: document.getElementById('context-custom-btn'),
+        contextClearBtn: document.getElementById('context-clear-btn'),
+        varBtns: document.querySelectorAll('.var-btn')
+    };
+
+    // --- Context Menu Logic ---
+    function hideContextMenu() {
+        els.contextMenu.style.display = 'none';
+        contextMenuTarget = null;
+    }
+
+    function showContextMenu(e, x, y) {
+        e.preventDefault(); // Prevent default browser menu
+        
+        // Ensure cell is in path
+        const isInPath = STATE.path.some(p => p.x === x && p.y === y);
+        if (!isInPath) return;
+
+        contextMenuTarget = { x, y };
+        
+        // Find existing var if any
+        let existingVar = '';
+        for (const [vName, pos] of Object.entries(STATE.variables)) {
+            if (pos.x === x && pos.y === y) {
+                existingVar = vName;
+                break;
+            }
+        }
+        els.contextCustomInput.value = existingVar;
+
+        // Position menu near mouse click
+        // Get container rect to constrain menu
+        const containerRect = els.gridContainer.getBoundingClientRect();
+        let menuX = e.clientX;
+        let menuY = e.clientY;
+
+        els.contextMenu.style.display = 'block';
+        els.contextCustomInput.focus();
+
+        // Adjust if goes off screen
+        const menuRect = els.contextMenu.getBoundingClientRect();
+        if (menuX + menuRect.width > window.innerWidth) {
+            menuX = window.innerWidth - menuRect.width - 10;
+        }
+        if (menuY + menuRect.height > window.innerHeight) {
+            menuY = window.innerHeight - menuRect.height - 10;
+        }
+
+        els.contextMenu.style.left = `${menuX}px`;
+        els.contextMenu.style.top = `${menuY}px`;
+    }
+
+    function assignVariableFromContext(varName) {
+        if (!contextMenuTarget || !varName) return;
+        const { x, y } = contextMenuTarget;
+
+        // Remove existing variable at this position if any
+        for (const key in STATE.variables) {
+            if (STATE.variables[key].x === x && STATE.variables[key].y === y) {
+                delete STATE.variables[key];
+            }
+        }
+
+        if (varName) {
+            // Check if valid
+            if (!/^[A-Z]$/.test(varName)) {
+                alert('變數名稱必須是單一英文字母 (A-Z)。');
+                return;
+            }
+            STATE.variables[varName] = { x, y, computedValue: null };
+        }
+
+        hideContextMenu();
+        updateGridUI();
+        updateDefinedVarsList();
+        simulateDiceRoll();
+        rebuild3DScene();
+    }
+
+    // Context menu event listeners
+    document.addEventListener('click', (e) => {
+        // Hide if clicked outside menu
+        if (els.contextMenu.style.display === 'block' && !els.contextMenu.contains(e.target)) {
+            hideContextMenu();
+        }
+    });
+
+    els.varBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            assignVariableFromContext(btn.dataset.val);
+        });
+    });
+
+    els.contextCustomBtn.addEventListener('click', () => {
+        assignVariableFromContext(els.contextCustomInput.value.trim().toUpperCase());
+    });
+
+    els.contextCustomInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            assignVariableFromContext(els.contextCustomInput.value.trim().toUpperCase());
+        }
+    });
+
+    els.contextClearBtn.addEventListener('click', () => {
+        if (!contextMenuTarget) return;
+        const { x, y } = contextMenuTarget;
+        for (const key in STATE.variables) {
+            if (STATE.variables[key].x === x && STATE.variables[key].y === y) {
+                delete STATE.variables[key];
+            }
+        }
+        hideContextMenu();
+        updateGridUI();
+        updateDefinedVarsList();
+        simulateDiceRoll();
+        rebuild3DScene();
+    });
+
+
+    // --- 2D Grid Logic ---
+    function initGrid() {
+        els.gridContainer.style.gridTemplateColumns = `repeat(${STATE.gridSize.cols}, 1fr)`;
+        els.gridContainer.innerHTML = '';
+        
+        for (let y = 0; y < STATE.gridSize.rows; y++) {
+            for (let x = 0; x < STATE.gridSize.cols; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+                
+                // Left click to build path
+                cell.addEventListener('click', (e) => handleCellClick(x, y));
+                // Right click to open var menu
+                cell.addEventListener('contextmenu', (e) => showContextMenu(e, x, y));
+                
+                els.gridContainer.appendChild(cell);
+            }
+        }
+        updateGridUI();
+    }
+
+    function handleCellClick(x, y) {
+        // Find if cell is already in path
+        const pathIndex = STATE.path.findIndex(p => p.x === x && p.y === y);
+        
+        if (pathIndex !== -1) {
+            // Already in path - do nothing on left click (right click is for vars now)
+            return;
+        } else {
+            // Try to add to path
+            if (STATE.path.length === 0) {
+                // First cell is start
+                STATE.path.push({ x, y });
+            } else {
+                // Must be adjacent to the LAST cell in path
+                const lastCell = STATE.path[STATE.path.length - 1];
+                const isAdjacent = (Math.abs(lastCell.x - x) === 1 && lastCell.y === y) || 
+                                   (Math.abs(lastCell.y - y) === 1 && lastCell.x === x);
+                
+                if (isAdjacent) {
+                    STATE.path.push({ x, y });
+                } else {
+                    // Flash red to indicate invalid move
+                    const cellEl = getCellEl(x, y);
+                    if(cellEl) {
+                        const origBg = cellEl.style.backgroundColor;
+                        cellEl.style.backgroundColor = '#fee2e2'; // Light red flash
+                        setTimeout(() => cellEl.style.backgroundColor = origBg, 200);
+                    }
+                    return; 
+                }
+            }
+        }
+        
+        // Stop animation if path changes
+        STATE.animation.isAnimating = false;
+        
+        updateGridUI();
+        simulateDiceRoll();
+        rebuild3DScene();
+    }
+
+    function getCellEl(x, y) {
+        return els.gridContainer.querySelector(`.grid-cell[data-x="${x}"][data-y="${y}"]`);
+    }
+
+    function updateGridUI() {
+        // Reset all cells
+        document.querySelectorAll('.grid-cell').forEach(el => {
+            el.className = 'grid-cell';
+            el.textContent = '';
+        });
+
+        // Mark path
+        STATE.path.forEach((p, index) => {
+            const el = getCellEl(p.x, p.y);
+            if (el) {
+                el.classList.add('active-path');
+                if (index === 0) el.classList.add('start-cell');
+                if (index === STATE.path.length - 1 && STATE.path.length > 1) el.classList.add('end-cell');
+            }
+        });
+
+        // Mark variables
+        Object.entries(STATE.variables).forEach(([varName, pos]) => {
+            const el = getCellEl(pos.x, pos.y);
+            if (el) {
+                el.classList.add('var-cell');
+                el.textContent = varName;
+            }
+        });
+    }
+
+    els.clearPathBtn.addEventListener('click', () => {
+        STATE.path = [];
+        STATE.variables = {};
+        STATE.selectedCell = null;
+        STATE.animation.isAnimating = false;
+        updateGridUI();
+        updateDefinedVarsList();
+        simulateDiceRoll();
+        rebuild3DScene();
+    });
+
+    els.undoPathBtn.addEventListener('click', () => {
+        if (STATE.path.length > 0) {
+            const removed = STATE.path.pop();
+            // Remove variable if it was on the removed cell
+            for (const key in STATE.variables) {
+                if (STATE.variables[key].x === removed.x && STATE.variables[key].y === removed.y) {
+                    delete STATE.variables[key];
+                }
+            }
+            STATE.animation.isAnimating = false;
+            updateGridUI();
+            updateDefinedVarsList();
+            simulateDiceRoll();
+            rebuild3DScene();
+        }
+    });
+
+    els.updateGridBtn.addEventListener('click', () => {
+        const rows = parseInt(els.gridRowsInput.value);
+        const cols = parseInt(els.gridColsInput.value);
+        
+        if (rows >= 3 && cols >= 3) {
+            STATE.gridSize = { rows, cols };
+            // Remove path points outside new grid
+            STATE.path = STATE.path.filter(p => p.x < cols && p.y < rows);
+            // Remove variables outside new grid
+            for (const key in STATE.variables) {
+                if (STATE.variables[key].x >= cols || STATE.variables[key].y >= rows) {
+                    delete STATE.variables[key];
+                }
+            }
+            
+            STATE.animation.isAnimating = false;
+            initGrid();
+            updateDefinedVarsList();
+            resetCamera();
+            simulateDiceRoll();
+            rebuild3DScene();
+        }
+    });
+
+    function updateDefinedVarsList() {
+        const vars = Object.keys(STATE.variables).sort();
+        els.definedVarsList.textContent = vars.length > 0 ? vars.join(', ') : '無';
+    }
+
+    // --- Appearance Settings Event Listeners ---
+    els.colorBg.addEventListener('input', (e) => {
+        STATE.appearance.bg = e.target.value;
+        if(scene) scene.background = new THREE.Color(STATE.appearance.bg);
+    });
+
+    els.colorPathTile.addEventListener('input', (e) => {
+        STATE.appearance.pathTile = e.target.value;
+        rebuild3DScene();
+    });
+
+    els.colorPathLine.addEventListener('input', (e) => {
+        STATE.appearance.pathLine = e.target.value;
+        rebuild3DScene();
+    });
+
+    // --- Dice Logic ---
+    
+    // Represent a dice state by its faces. index 0=top, 1=bottom, 2=front, 3=back, 4=left, 5=right
+    // CORRECTED rightFaceTable according to actual physical dice standard.
+    // If you look at a standard right-handed die: Top=1, Front=3, Right must be 2.
+    // Right-handed rule: 1, 2, 3 meet at a vertex and go counter-clockwise.
+    const rightFaceTable = {
+        1: { 2: 3, 3: 5, 4: 2, 5: 4 }, // If top=1, front=2 -> right=3. front=3 -> right=5. etc.
+        2: { 1: 4, 3: 1, 4: 6, 6: 3 },
+        3: { 1: 2, 2: 6, 5: 1, 6: 5 },
+        4: { 1: 5, 2: 1, 5: 6, 6: 2 },
+        5: { 1: 3, 3: 6, 4: 1, 6: 4 },
+        6: { 2: 4, 3: 2, 4: 5, 5: 3 }
+    };
+
+    function createDiceState(top, front, handedness) {
+        const state = [0, 0, 0, 0, 0, 0];
+        top = parseInt(top);
+        front = parseInt(front);
+        
+        state[0] = top;
+        state[1] = 7 - top;
+        state[2] = front;
+        state[3] = 7 - front;
+        
+        let right = rightFaceTable[top][front];
+        
+        if (handedness === 'left') {
+            right = 7 - right; // Swap left and right for left-handed die
+        }
+
+        state[5] = right;
+        state[4] = 7 - right;
+        
+        return state;
+    }
+
+    // Roll functions alter the state array [top, bottom, front, back, left, right]
+    function rollRight(s) {
+        // Grid +X. Move right. Top -> Right, Right -> Bottom, Bottom -> Left, Left -> Top
+        return [s[4], s[5], s[2], s[3], s[1], s[0]];
+    }
+    function rollLeft(s) {
+        // Grid -X. Move left. Top -> Left, Left -> Bottom, Bottom -> Right, Right -> Top
+        return [s[5], s[4], s[2], s[3], s[0], s[1]];
+    }
+    function rollForward(s) {
+        // Grid -Y (Moving UP the grid). Roll AWAY from user in 3D.
+        // Top -> Back, Front -> Top, Bottom -> Front, Back -> Bottom
+        return [s[2], s[3], s[1], s[0], s[4], s[5]];
+    }
+    function rollBackward(s) {
+        // Grid +Y (Moving DOWN the grid). Roll TOWARDS user in 3D.
+        // Top -> Front, Back -> Top, Bottom -> Back, Front -> Bottom
+        return [s[3], s[2], s[0], s[1], s[4], s[5]];
+    }
+
+    function simulateDiceRoll() {
+        if (STATE.path.length === 0) {
+            STATE.simulation.vars = {};
+            updateAnswersPreview();
+            return;
+        }
+
+        let currentState = createDiceState(STATE.diceConfig.topFace, STATE.diceConfig.frontFace, STATE.diceConfig.handedness);
+        let currentPos = { ...STATE.path[0] };
+        
+        // Reset computed values
+        for (const v in STATE.variables) {
+            STATE.variables[v].computedValue = null;
+        }
+
+        // Check first cell
+        const faceIndex = STATE.diceConfig.calcFace === 'bottom' ? 1 : 0;
+        
+        // Store computed face value in the path object itself for rendering path numbers later
+        STATE.path[0].computedFaceVal = currentState[faceIndex];
+        checkVariable(currentPos, currentState[faceIndex]);
+
+        for (let i = 1; i < STATE.path.length; i++) {
+            const nextPos = STATE.path[i];
+            
+            if (nextPos.x > currentPos.x) currentState = rollRight(currentState);
+            else if (nextPos.x < currentPos.x) currentState = rollLeft(currentState);
+            else if (nextPos.y > currentPos.y) currentState = rollBackward(currentState); // Move down screen = roll towards user
+            else if (nextPos.y < currentPos.y) currentState = rollForward(currentState); // Move up screen = roll away
+            
+            currentPos = { ...nextPos };
+            
+            // Store face value in path for visual rendering
+            STATE.path[i].computedFaceVal = currentState[faceIndex];
+            
+            // Check if this position has a variable assigned
+            checkVariable(currentPos, currentState[faceIndex]);
+        }
+
+        // Prepare simulation vars for display/calc
+        STATE.simulation.vars = {};
+        for (const [vName, data] of Object.entries(STATE.variables)) {
+            if (data.computedValue !== null) {
+                STATE.simulation.vars[vName] = data.computedValue;
+            }
+        }
+        
+        renderVarsPreview();
+        updateAnswersPreview();
+    }
+
+    function checkVariable(pos, computedFaceVal) {
+        for (const [vName, data] of Object.entries(STATE.variables)) {
+            if (data.x === pos.x && data.y === pos.y) {
+                data.computedValue = computedFaceVal;
+            }
+        }
+    }
+
+    function renderVarsPreview() {
+        els.varsValuesPreview.innerHTML = '';
+        const vars = Object.keys(STATE.simulation.vars).sort();
+        
+        if (vars.length === 0) {
+            els.varsValuesPreview.innerHTML = '<span class="text-gray-400 italic">尚無計算結果</span>';
+            return;
+        }
+        
+        vars.forEach(v => {
+            const val = STATE.simulation.vars[v];
+            const div = document.createElement('div');
+            div.className = 'bg-blue-100 text-blue-800 px-3 py-1 rounded-md text-center font-bold border border-blue-200 shadow-sm flex items-center gap-2';
+            div.innerHTML = `<span>${v}</span><span class="text-blue-400">|</span><span class="text-lg">${val}</span>`;
+            els.varsValuesPreview.appendChild(div);
+        });
+    }
+
+    // --- Questions Logic ---
+    function renderQuestions() {
+        els.questionsContainer.innerHTML = '';
+        
+        if (STATE.questions.length === 0) {
+            els.questionsContainer.innerHTML = '<p class="text-sm text-gray-500 italic">尚未新增任何題目。</p>';
+        }
+
+        STATE.questions.forEach((q, index) => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2';
+            
+            const num = document.createElement('span');
+            num.className = 'font-bold text-gray-700 w-6';
+            num.textContent = `${index + 1}.`;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'flex-1 border-gray-300 rounded-md shadow-sm p-2 border font-mono text-lg uppercase focus:ring-blue-500 focus:border-blue-500 tracking-wider';
+            input.value = q;
+            input.placeholder = '例如: A - F + E * G';
+            
+            // Clean input on change
+            input.addEventListener('input', (e) => {
+                let val = e.target.value.toUpperCase();
+                // Allow only letters, numbers, basic math operators, spaces, parens
+                val = val.replace(/[^A-Z0-9+\-*/()×÷\s]/g, '');
+                e.target.value = val;
+                STATE.questions[index] = val;
+                updateAnswersPreview();
+            });
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition';
+            delBtn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>';
+            delBtn.onclick = () => {
+                STATE.questions.splice(index, 1);
+                els.addQuestionBtn.disabled = false;
+                els.addQuestionBtn.classList.remove('opacity-50');
+                renderQuestions();
+                updateAnswersPreview();
+            };
+
+            div.appendChild(num);
+            div.appendChild(input);
+            div.appendChild(delBtn);
+            els.questionsContainer.appendChild(div);
+        });
+
+        // Manage Add button state
+        if (STATE.questions.length >= MAX_QUESTIONS) {
+            els.addQuestionBtn.disabled = true;
+            els.addQuestionBtn.classList.add('opacity-50');
+        }
+    }
+
+    els.addQuestionBtn.addEventListener('click', () => {
+        if (STATE.questions.length < MAX_QUESTIONS) {
+            STATE.questions.push('');
+            renderQuestions();
+        }
+    });
+
+    function evaluateExpression(expr, vars) {
+        if (!expr.trim()) return null;
+        
+        let processExpr = expr
+            .replace(/×/g, '*')
+            .replace(/÷/g, '/');
+            
+        // Check if expression contains variables not yet defined in simulation
+        const varsInExpr = processExpr.match(/[A-Z]/g) || [];
+        for (const v of varsInExpr) {
+            if (vars[v] === undefined) {
+                return `等待變數 ${v}`;
+            }
+        }
+
+        // Replace variables with their values
+        for (const [vName, val] of Object.entries(vars)) {
+            const regex = new RegExp(vName, 'g');
+            processExpr = processExpr.replace(regex, val);
+        }
+
+        try {
+            // Safe evaluation using Function
+            if (/^[0-9+\-*/().\s]+$/.test(processExpr)) {
+                 const result = new Function(`return ${processExpr}`)();
+                 if (!isFinite(result)) return '運算錯誤 (除以零?)';
+                 return Number.isInteger(result) ? result : parseFloat(result.toFixed(2));
+            } else {
+                return '語法錯誤';
+            }
+        } catch (e) {
+            return '語法錯誤';
+        }
+    }
+
+    function updateAnswersPreview() {
+        els.answersPreview.innerHTML = '';
+        
+        if (STATE.questions.length === 0) {
+            els.answersPreview.innerHTML = '<span class="text-gray-500">尚無題目</span>';
+            return;
+        }
+
+        let hasValidContext = Object.keys(STATE.simulation.vars).length > 0;
+
+        STATE.questions.forEach((q, i) => {
+            const div = document.createElement('div');
+            div.className = 'py-2 border-b last:border-0 border-gray-100 flex justify-between items-center text-base';
+            
+            const qSpan = document.createElement('span');
+            qSpan.textContent = `${i+1}. ${q || '...'}`;
+            qSpan.className = 'text-gray-700 tracking-wide';
+            
+            const aSpan = document.createElement('span');
+            aSpan.className = 'font-bold text-lg text-blue-700 bg-blue-50 px-3 py-1 rounded-md min-w-[3rem] text-center';
+            
+            if (!q.trim()) {
+                 aSpan.textContent = '-';
+                 aSpan.className = 'text-gray-400';
+            } else if (!hasValidContext) {
+                 aSpan.textContent = '等待路徑';
+                 aSpan.className = 'text-orange-500 text-sm italic';
+            } else {
+                const ans = evaluateExpression(q, STATE.simulation.vars);
+                aSpan.textContent = ans !== null ? ans : '-';
+                
+                if (typeof ans === 'string' && (ans.includes('錯誤') || ans.includes('等待'))) {
+                    aSpan.className = 'text-red-500 text-sm italic';
+                }
+            }
+
+            div.appendChild(qSpan);
+            div.appendChild(aSpan);
+            els.answersPreview.appendChild(div);
+        });
+    }
+
+    // --- Control Event Listeners ---
+    els.diceHandedness.addEventListener('change', (e) => {
+        STATE.diceConfig.handedness = e.target.value;
+        simulateDiceRoll();
+        rebuild3DScene();
+    });
+
+    els.diceTopFace.addEventListener('change', (e) => {
+        STATE.diceConfig.topFace = e.target.value;
+        updateFrontFaceOptions();
+        simulateDiceRoll();
+        rebuild3DScene();
+    });
+
+    els.diceFrontFace.addEventListener('change', (e) => {
+        STATE.diceConfig.frontFace = e.target.value;
+        simulateDiceRoll();
+        rebuild3DScene();
+    });
+
+    els.diceCalcFace.addEventListener('change', (e) => {
+        STATE.diceConfig.calcFace = e.target.value;
+        simulateDiceRoll();
+        rebuild3DScene(); // Need to rebuild to update the numbers shown on path
+    });
+
+    els.showPathNumbersCb.addEventListener('change', (e) => {
+        STATE.showPathNumbers = e.target.checked;
+        rebuild3DScene();
+    });
+
+    function updateFrontFaceOptions() {
+        const top = STATE.diceConfig.topFace;
+        const validFronts = getValidFrontFaces(top);
+        
+        const currentFront = els.diceFrontFace.value;
+        els.diceFrontFace.innerHTML = '';
+        
+        let hasSelected = false;
+        validFronts.forEach(val => {
+            const opt = document.createElement('option');
+            opt.value = val;
+            opt.textContent = val;
+            if (val == currentFront) {
+                opt.selected = true;
+                hasSelected = true;
+            }
+            els.diceFrontFace.appendChild(opt);
+        });
+
+        if (!hasSelected) {
+            els.diceFrontFace.value = validFronts[0];
+            STATE.diceConfig.frontFace = validFronts[0];
+        }
+    }
+
+
+    // --- Three.js 3D Scene ---
+    let scene, camera, renderer, controls;
+    let sceneObjects = []; 
+    let mainDiceMesh = null; 
+    const CELL_SIZE = 2; 
+
+    function init3D() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(STATE.appearance.bg);
+        
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        scene.add(dirLight);
+
+        const width = els.canvasContainer.clientWidth;
+        const height = els.canvasContainer.clientHeight;
+        camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+        
+        renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); 
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        els.canvasContainer.appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.05; 
+
+        window.addEventListener('resize', onWindowResize, false);
+        const resizeObserver = new ResizeObserver(entries => {
+            onWindowResize();
+        });
+        resizeObserver.observe(els.canvasContainer);
+
+        resetCamera();
+        // rebuild3DScene will be called in main init()
+        animate();
+    }
+
+    function resetCamera() {
+        const centerX = (STATE.gridSize.cols * CELL_SIZE) / 2 - (CELL_SIZE / 2);
+        const centerZ = (STATE.gridSize.rows * CELL_SIZE) / 2 - (CELL_SIZE / 2);
+        
+        camera.position.set(centerX + 15, 20, centerZ + 20);
+        controls.target.set(centerX, 0, centerZ);
+        controls.update();
+    }
+
+    els.resetCamBtn.addEventListener('click', resetCamera);
+
+    function onWindowResize() {
+        if (!els.canvasContainer || !camera || !renderer) return;
+        const width = els.canvasContainer.clientWidth;
+        const height = els.canvasContainer.clientHeight;
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }
+
+    // --- Animation Logic ---
+    function prepareAnimation() {
+        if (STATE.path.length === 0 || !mainDiceMesh) return false;
+        
+        STATE.animation.steps = [];
+        let currentQuat = mainDiceMesh.quaternion.clone(); // start from current initial rotation
+        let currentPos = new THREE.Vector3(STATE.path[0].x * CELL_SIZE, CELL_SIZE * 0.45, STATE.path[0].y * CELL_SIZE);
+        
+        STATE.animation.steps.push({ pos: currentPos.clone(), quat: currentQuat.clone() });
+
+        for (let i = 1; i < STATE.path.length; i++) {
+            const prev = STATE.path[i-1];
+            const curr = STATE.path[i];
+            
+            const nextPos = new THREE.Vector3(curr.x * CELL_SIZE, CELL_SIZE * 0.45, curr.y * CELL_SIZE);
+            const stepQuat = new THREE.Quaternion();
+            const angle = Math.PI / 2;
+            
+            if (curr.x > prev.x) { // Right (+X)
+                stepQuat.setFromAxisAngle(new THREE.Vector3(0, 0, -1), angle);
+            } else if (curr.x < prev.x) { // Left (-X)
+                stepQuat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+            } else if (curr.y > prev.y) { // Down in grid -> +Z in 3D (Roll Backward towards user)
+                stepQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle);
+            } else if (curr.y < prev.y) { // Up in grid -> -Z in 3D (Roll Forward away from user)
+                stepQuat.setFromAxisAngle(new THREE.Vector3(-1, 0, 0), angle);
+            }
+            
+            // Multiply pre-applies rotation in world space for our axes
+            currentQuat = stepQuat.multiply(currentQuat);
+            
+            STATE.animation.steps.push({ pos: nextPos.clone(), quat: currentQuat.clone() });
+        }
+        return true;
+    }
+
+    els.playAnimBtn.addEventListener('click', () => {
+        if (prepareAnimation()) {
+            STATE.animation.durationPerStep = parseInt(els.animSpeedSlider.value);
+            // Reverse slider visually means lower value = faster. Let's adjust math: 1100 - value
+            STATE.animation.durationPerStep = 1100 - parseInt(els.animSpeedSlider.value);
+
+            if (STATE.animation.isPaused) {
+                // Resume
+                STATE.animation.isPaused = false;
+                STATE.animation.startTime = performance.now() - STATE.animation.pausedTime;
+            } else {
+                // Start from beginning
+                mainDiceMesh.position.copy(STATE.animation.steps[0].pos);
+                mainDiceMesh.quaternion.copy(STATE.animation.steps[0].quat);
+                STATE.animation.startTime = performance.now();
+            }
+            STATE.animation.isAnimating = true;
+            els.playAnimBtn.classList.add('hidden');
+            els.pauseAnimBtn.classList.remove('hidden');
+        } else {
+            alert('請先建立路徑。');
+        }
+    });
+
+    els.pauseAnimBtn.addEventListener('click', () => {
+        if (STATE.animation.isAnimating) {
+            STATE.animation.isAnimating = false;
+            STATE.animation.isPaused = true;
+            STATE.animation.pausedTime = performance.now() - STATE.animation.startTime;
+            els.pauseAnimBtn.classList.add('hidden');
+            els.playAnimBtn.classList.remove('hidden');
+            els.playAnimBtn.innerHTML = '<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 繼續播放';
+        }
+    });
+
+    els.resetDiceBtn.addEventListener('click', () => {
+        STATE.animation.isAnimating = false; // 停止動畫
+        STATE.animation.isPaused = false;
+        els.pauseAnimBtn.classList.add('hidden');
+        els.playAnimBtn.classList.remove('hidden');
+        els.playAnimBtn.innerHTML = '<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 播放滾動';
+        
+        // 為了確保骰子回到最乾淨的初始狀態，直接重新產生 3D 場景中的骰子物件
+        if (mainDiceMesh && scene) {
+            scene.remove(mainDiceMesh);
+            if (mainDiceMesh.geometry) mainDiceMesh.geometry.dispose();
+            if (mainDiceMesh.material) {
+                if (Array.isArray(mainDiceMesh.material)) {
+                    mainDiceMesh.material.forEach(m => { if(m.map) m.map.dispose(); m.dispose(); });
+                } else {
+                    if(mainDiceMesh.material.map) mainDiceMesh.material.map.dispose();
+                    mainDiceMesh.material.dispose();
+                }
+            }
+            
+            // 重新在起點生成骰子
+            let diceStartX = 0;
+            let diceStartZ = 0;
+            if (STATE.path.length > 0) {
+                diceStartX = STATE.path[0].x * CELL_SIZE;
+                diceStartZ = STATE.path[0].y * CELL_SIZE;
+            }
+            
+            const newDice = createDiceMesh(STATE.diceConfig.topFace, STATE.diceConfig.frontFace, STATE.diceConfig.handedness);
+            newDice.position.set(diceStartX, CELL_SIZE * 0.45, diceStartZ);
+            
+            scene.add(newDice);
+            sceneObjects.push(newDice);
+            mainDiceMesh = newDice;
+            
+            // 重新準備動畫步驟，以便下次播放
+            prepareAnimation();
+        }
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        if (STATE.animation.isAnimating && mainDiceMesh && STATE.animation.steps.length > 0) {
+            const now = performance.now();
+            const elapsed = now - STATE.animation.startTime;
+            const totalDuration = (STATE.animation.steps.length - 1) * STATE.animation.durationPerStep;
+            
+            if (elapsed >= totalDuration || STATE.animation.steps.length === 1) {
+                // Animation complete
+                STATE.animation.isAnimating = false;
+                STATE.animation.isPaused = false;
+                els.pauseAnimBtn.classList.add('hidden');
+                els.playAnimBtn.classList.remove('hidden');
+                els.playAnimBtn.innerHTML = '<svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> 播放滾動';
+
+                const lastStep = STATE.animation.steps[STATE.animation.steps.length - 1];
+                mainDiceMesh.position.copy(lastStep.pos);
+                mainDiceMesh.quaternion.copy(lastStep.quat);
+            } else {
+                // Interpolate
+                const currentStepIndex = Math.floor(elapsed / STATE.animation.durationPerStep);
+                const progress = (elapsed % STATE.animation.durationPerStep) / STATE.animation.durationPerStep;
+                
+                const stepStart = STATE.animation.steps[currentStepIndex];
+                const stepEnd = STATE.animation.steps[currentStepIndex + 1];
+                
+                // Position with bounce arc
+                mainDiceMesh.position.lerpVectors(stepStart.pos, stepEnd.pos, progress);
+                mainDiceMesh.position.y = (CELL_SIZE * 0.45) + Math.sin(progress * Math.PI) * (CELL_SIZE * 0.3);
+                
+                // Rotation
+                THREE.Quaternion.slerp(stepStart.quat, stepEnd.quat, mainDiceMesh.quaternion, progress);
+            }
+        }
+
+        controls.update();
+        renderer.render(scene, camera);
+    }
+
+    // --- 3D Object Generation ---
+
+    function createDiceFaceTexture(number, isSpecial) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 256, 256);
+        
+        ctx.lineWidth = 10;
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.strokeRect(5, 5, 246, 246);
+
+        ctx.fillStyle = isSpecial && (number===1 || number===4) ? '#ef4444' : '#1f2937'; 
+        
+        const drawDot = (x, y) => {
+            ctx.beginPath();
+            ctx.arc(x, y, 22, 0, Math.PI * 2);
+            ctx.fill();
+        };
+
+        const center = 128;
+        const offset = 60;
+
+        switch (parseInt(number)) {
+            case 1: drawDot(center, center); break;
+            case 2: drawDot(center - offset, center - offset); drawDot(center + offset, center + offset); break;
+            case 3: drawDot(center - offset, center - offset); drawDot(center, center); drawDot(center + offset, center + offset); break;
+            case 4: 
+                drawDot(center - offset, center - offset); drawDot(center + offset, center + offset); 
+                drawDot(center - offset, center + offset); drawDot(center + offset, center - offset); 
+                break;
+            case 5: 
+                drawDot(center - offset, center - offset); drawDot(center + offset, center + offset); 
+                drawDot(center - offset, center + offset); drawDot(center + offset, center - offset); 
+                drawDot(center, center);
+                break;
+            case 6: 
+                drawDot(center - offset, center - offset); drawDot(center - offset, center); drawDot(center - offset, center + offset);
+                drawDot(center + offset, center - offset); drawDot(center + offset, center); drawDot(center + offset, center + offset);
+                break;
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return texture;
+    }
+
+    function createDiceMesh(top, front, handedness) {
+        const geometry = new THREE.BoxGeometry(CELL_SIZE * 0.9, CELL_SIZE * 0.9, CELL_SIZE * 0.9); 
+        
+        const state = createDiceState(top, front, handedness);
+        
+        // 0: Right, 1: Left, 2: Top, 3: Bottom, 4: Front, 5: Back
+        const materials = [
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[5], true), roughness: 0.1 }), // Right
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[4], true), roughness: 0.1 }), // Left
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[0], true), roughness: 0.1 }), // Top
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[1], true), roughness: 0.1 }), // Bottom
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[2], true), roughness: 0.1 }), // Front
+            new THREE.MeshStandardMaterial({ map: createDiceFaceTexture(state[3], true), roughness: 0.1 })  // Back
+        ];
+
+        const dice = new THREE.Mesh(geometry, materials);
+        dice.castShadow = true;
+        dice.receiveShadow = true;
+        
+        return dice;
+    }
+
+    function createGridTextLabel(text, color, bgColor, smallText) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.fillStyle = bgColor || '#ffffff';
+        ctx.fillRect(0, 0, 128, 128);
+        
+        // Draw inner border to make it look like a distinct tile
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(2, 2, 124, 124);
+
+        if (text) {
+            ctx.fillStyle = color || '#1f2937';
+            ctx.font = 'bold 70px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 64, 64);
+        }
+
+        if (smallText) {
+             ctx.fillStyle = 'rgba(255,255,255,0.7)';
+             ctx.font = 'bold 30px Arial';
+             ctx.textAlign = 'left';
+             ctx.textBaseline = 'top';
+             ctx.fillText(smallText, 10, 10);
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        return new THREE.MeshStandardMaterial({ map: texture, roughness: 0.8 });
+    }
+
+    function rebuild3DScene() {
+        if (!scene) return;
+
+        // Clean up old objects
+        sceneObjects.forEach(obj => {
+            scene.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) {
+                    obj.material.forEach(m => { if(m.map) m.map.dispose(); m.dispose(); });
+                } else {
+                    if(obj.material.map) obj.material.map.dispose();
+                    obj.material.dispose();
+                }
+            }
+        });
+        sceneObjects = [];
+
+        // --- Draw custom wireframe grid matching columns/rows exactly ---
+        const gridGroup = new THREE.Group();
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.5 });
+        
+        const gridWidth = STATE.gridSize.cols * CELL_SIZE;
+        const gridDepth = STATE.gridSize.rows * CELL_SIZE;
+        
+        // Horizontal lines (along X axis)
+        for (let i = 0; i <= STATE.gridSize.rows; i++) {
+            const z = i * CELL_SIZE - (CELL_SIZE/2);
+            const points = [];
+            points.push(new THREE.Vector3(-CELL_SIZE/2, -0.01, z));
+            points.push(new THREE.Vector3(gridWidth - CELL_SIZE/2, -0.01, z));
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            gridGroup.add(new THREE.Line(geom, lineMaterial));
+        }
+        
+        // Vertical lines (along Z axis)
+        for (let i = 0; i <= STATE.gridSize.cols; i++) {
+            const x = i * CELL_SIZE - (CELL_SIZE/2);
+            const points = [];
+            points.push(new THREE.Vector3(x, -0.01, -CELL_SIZE/2));
+            points.push(new THREE.Vector3(x, -0.01, gridDepth - CELL_SIZE/2));
+            const geom = new THREE.BufferGeometry().setFromPoints(points);
+            gridGroup.add(new THREE.Line(geom, lineMaterial));
+        }
+        
+        scene.add(gridGroup);
+        sceneObjects.push(gridGroup);
+
+
+        // --- Draw Active Path Tiles & Connections ---
+        const baseGeom = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
+        baseGeom.rotateX(-Math.PI / 2);
+
+        const matPath = new THREE.MeshStandardMaterial({ color: STATE.appearance.pathTile, roughness: 0.7 });
+        const matPathLine = new THREE.LineBasicMaterial({ color: STATE.appearance.pathLine, linewidth: 4 });
+
+        STATE.path.forEach((p, index) => {
+            let mat = matPath;
+            let centerText = '';
+            let cornerText = STATE.showPathNumbers && p.computedFaceVal ? p.computedFaceVal.toString() : '';
+            
+            // Check for variable
+            for (const [vName, vData] of Object.entries(STATE.variables)) {
+                if (vData.x === p.x && vData.y === p.y) {
+                    centerText = vName;
+                    break;
+                }
+            }
+
+            if (centerText || cornerText) {
+                // If it has a variable, use Red background. Else use custom Path Tile color.
+                const bgColor = centerText ? '#fca5a5' : STATE.appearance.pathTile;
+                mat = createGridTextLabel(centerText, '#ffffff', bgColor, cornerText);
+            }
+
+            // Draw Tile
+            const tile = new THREE.Mesh(baseGeom, mat);
+            tile.position.set(p.x * CELL_SIZE, 0, p.y * CELL_SIZE);
+            tile.receiveShadow = true;
+            scene.add(tile);
+            sceneObjects.push(tile);
+
+            // Draw connecting line to NEXT tile
+            if (index < STATE.path.length - 1) {
+                const nextP = STATE.path[index+1];
+                const points = [];
+                points.push(new THREE.Vector3(p.x * CELL_SIZE, 0.02, p.y * CELL_SIZE));
+                points.push(new THREE.Vector3(nextP.x * CELL_SIZE, 0.02, nextP.y * CELL_SIZE));
+                const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
+                const line = new THREE.Line(lineGeom, matPathLine);
+                scene.add(line);
+                sceneObjects.push(line);
+            }
+        });
+
+
+        // --- Add Dice at Start Position ---
+        let diceStartX = 0;
+        let diceStartZ = 0;
+        if (STATE.path.length > 0) {
+            diceStartX = STATE.path[0].x * CELL_SIZE;
+            diceStartZ = STATE.path[0].y * CELL_SIZE;
+        }
+
+        const dice = createDiceMesh(STATE.diceConfig.topFace, STATE.diceConfig.frontFace, STATE.diceConfig.handedness);
+        dice.position.set(diceStartX, CELL_SIZE * 0.45, diceStartZ); 
+        
+        scene.add(dice);
+        sceneObjects.push(dice);
+        mainDiceMesh = dice;
+        
+        // Reset animation state
+        if(!STATE.animation.isAnimating && !STATE.animation.isPaused) {
+             prepareAnimation();
+        }
+    }
+
+    // --- Export Functionality ---
+    
+    async function prepareExportCapture() {
+        return new Promise((resolve) => {
+            // Force a render of the 3D scene to ensure buffer is ready
+            renderer.render(scene, camera);
+            const dataUrl = renderer.domElement.toDataURL('image/png', 1.0);
+            document.getElementById('export-image-holder').src = dataUrl;
+            
+            // Build the questions HTML for export view
+            const qList = document.getElementById('export-questions-list');
+            qList.innerHTML = '';
+            
+            // Render title based on current state (Question vs Answer)
+            const ansTitle = document.createElement('div');
+            ansTitle.className = 'export-title';
+            if (STATE.showPathNumbers) {
+                ansTitle.style.color = '#fbbf24';
+                ansTitle.textContent = '解答 (供教師參考)';
+                qList.appendChild(ansTitle);
+                
+                const varsDiv = document.createElement('div');
+                varsDiv.style.fontSize = '18px';
+                varsDiv.style.color = '#93c5fd';
+                varsDiv.style.marginBottom = '20px';
+                const varsStr = Object.keys(STATE.simulation.vars).sort().map(v => `${v}=${STATE.simulation.vars[v]}`).join(', ');
+                varsDiv.textContent = varsStr ? `變數: ${varsStr}` : '變數: 無';
+                qList.appendChild(varsDiv);
+            } else {
+                ansTitle.textContent = '題目';
+                qList.appendChild(ansTitle);
+            }
+
+            STATE.questions.forEach((q, i) => {
+                if(q.trim()) {
+                    const div = document.createElement('div');
+                    div.className = 'export-question-item';
+                    
+                    let formattedQ = q.replace(/\*/g, '×').replace(/\//g, '÷');
+                    
+                    if (STATE.showPathNumbers) {
+                        let ans = evaluateExpression(q, STATE.simulation.vars);
+                        div.innerHTML = `<span style="color: #93c5fd; width: 40px; display:inline-block;">${i+1}.</span> ${formattedQ} = <span style="color:white; margin-left:10px;">${ans}</span>`;
+                    } else {
+                        div.innerHTML = `<span style="color: #93c5fd; width: 40px; display:inline-block;">${i+1}.</span> ${formattedQ}`;
+                    }
+                    
+                    qList.appendChild(div);
+                }
+            });
+
+            // Wait a bit for DOM to update and images to load
+            setTimeout(resolve, 150);
+        });
+    }
+
+    async function setExportState(loading) {
+        const exportView = document.getElementById('export-view');
+        if(loading) {
+            els.exportLoader.style.display = 'block';
+            els.exportStatus.style.display = 'block';
+            els.exportStatus.textContent = '準備畫面中...';
+            els.exportJpgBtn.disabled = true;
+            els.exportPdfBtn.disabled = true;
+            els.exportPptBtn.disabled = true;
+            
+            // KEY FIX: Move into viewport but hide visually behind other elements
+            // This allows html2canvas to render it properly without being "black"
+            exportView.style.left = '0px';
+            exportView.style.top = '0px';
+            exportView.style.zIndex = '-9999'; 
+            exportView.style.opacity = '1';
+        } else {
+            els.exportLoader.style.display = 'none';
+            els.exportStatus.style.display = 'none';
+            els.exportJpgBtn.disabled = false;
+            els.exportPdfBtn.disabled = false;
+            els.exportPptBtn.disabled = false;
+            
+            // Hide export view again
+            exportView.style.left = '-9999px';
+            exportView.style.top = '0px';
+            exportView.style.zIndex = 'auto';
+        }
+    }
+
+    els.exportJpgBtn.addEventListener('click', async () => {
+        if(STATE.questions.length === 0 && STATE.path.length === 0) {
+            alert('請先設定路徑或題目再輸出。'); return;
+        }
+        await setExportState(true);
+        const originalShowPathNums = STATE.showPathNumbers;
+        
+        try {
+            // --- 1. 生成題目卷 ---
+            els.exportStatus.textContent = '生成題庫 JPG 中...';
+            STATE.showPathNumbers = false;
+            rebuild3DScene();
+            await prepareExportCapture();
+
+            const canvasQ = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, 
+                backgroundColor: '#1a1a2e', 
+                logging: false, 
+                useCORS: true,
+                windowWidth: 1280, // Force dimensions
+                windowHeight: 720
+            });
+            const linkQ = document.createElement('a');
+            linkQ.download = 'dice_puzzle_題目卷.jpg';
+            linkQ.href = canvasQ.toDataURL('image/jpeg', 0.9);
+            linkQ.click();
+
+            // --- 2. 生成解答卷 ---
+            els.exportStatus.textContent = '生成解答 JPG 中...';
+            STATE.showPathNumbers = true;
+            rebuild3DScene();
+            await prepareExportCapture();
+
+            const canvasA = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, 
+                backgroundColor: '#1a1a2e', 
+                logging: false, 
+                useCORS: true,
+                windowWidth: 1280,
+                windowHeight: 720
+            });
+            const linkA = document.createElement('a');
+            linkA.download = 'dice_puzzle_解答卷.jpg';
+            linkA.href = canvasA.toDataURL('image/jpeg', 0.9);
+            
+            // Delay second download slightly to prevent browser blocking
+            setTimeout(() => { linkA.click(); }, 600);
+
+        } catch (e) {
+            console.error("Export JPG Error:", e);
+            alert('輸出 JPG 失敗，請重試。');
+        } finally {
+            STATE.showPathNumbers = originalShowPathNums;
+            rebuild3DScene();
+            await setExportState(false);
+        }
+    });
+
+    els.exportPdfBtn.addEventListener('click', async () => {
+        if(STATE.questions.length === 0 && STATE.path.length === 0) {
+            alert('請先設定路徑或題目再輸出。'); return;
+        }
+        await setExportState(true);
+        const originalShowPathNums = STATE.showPathNumbers;
+
+        try {
+            // --- 1. 擷取題目畫面 ---
+            els.exportStatus.textContent = '生成 PDF (1/2)...';
+            STATE.showPathNumbers = false;
+            rebuild3DScene();
+            await prepareExportCapture();
+
+            const canvasQ = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, 
+                backgroundColor: '#1a1a2e', 
+                logging: false, 
+                useCORS: true,
+                windowWidth: 1280,
+                windowHeight: 720
+            });
+            const imgDataQ = canvasQ.toDataURL('image/jpeg', 0.9);
+            
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('l', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeightQ = (canvasQ.height * pdfWidth) / canvasQ.width;
+            
+            pdf.addImage(imgDataQ, 'JPEG', 0, (pdf.internal.pageSize.getHeight()-pdfHeightQ)/2, pdfWidth, pdfHeightQ);
+            
+            // --- 2. 擷取解答畫面 ---
+            els.exportStatus.textContent = '生成 PDF (2/2)...';
+            STATE.showPathNumbers = true;
+            rebuild3DScene();
+            await prepareExportCapture();
+            
+            const canvasA = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, 
+                backgroundColor: '#1a1a2e', 
+                logging: false, 
+                useCORS: true,
+                windowWidth: 1280,
+                windowHeight: 720
+            });
+            const imgDataA = canvasA.toDataURL('image/jpeg', 0.9);
+            const pdfHeightA = (canvasA.height * pdfWidth) / canvasA.width;
+
+            pdf.addPage();
+            pdf.addImage(imgDataA, 'JPEG', 0, (pdf.internal.pageSize.getHeight()-pdfHeightA)/2, pdfWidth, pdfHeightA);
+
+            pdf.save('dice_puzzle.pdf');
+        } catch (e) {
+            console.error("Export PDF Error:", e);
+            alert('輸出 PDF 失敗，請重試。');
+        } finally {
+            STATE.showPathNumbers = originalShowPathNums;
+            rebuild3DScene();
+            await setExportState(false);
+        }
+    });
+
+    els.exportPdfBtn.addEventListener('click', async () => {
+        if(STATE.questions.length === 0 && STATE.path.length === 0) {
+            alert('請先設定路徑或題目再輸出。'); return;
+        }
+        await setExportState(true);
+        const originalShowPathNums = STATE.showPathNumbers;
+
+        try {
+            // --- 1. 擷取題目畫面 ---
+            els.exportStatus.textContent = '生成 PDF (1/2)...';
+            STATE.showPathNumbers = false;
+            rebuild3DScene();
+            await prepareExportCapture();
+
+            const canvasQ = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, backgroundColor: '#1a1a2e', logging: false, useCORS: true
+            });
+            const imgDataQ = canvasQ.toDataURL('image/jpeg', 0.9);
+            
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('l', 'mm', 'a4');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeightQ = (canvasQ.height * pdfWidth) / canvasQ.width;
+            
+            // 將題目圖貼上第一頁
+            pdf.addImage(imgDataQ, 'JPEG', 0, (pdf.internal.pageSize.getHeight()-pdfHeightQ)/2, pdfWidth, pdfHeightQ);
+            
+            // --- 2. 擷取解答畫面 ---
+            els.exportStatus.textContent = '生成 PDF (2/2)...';
+            STATE.showPathNumbers = true;
+            rebuild3DScene();
+            await prepareExportCapture();
+            
+            const canvasA = await html2canvas(document.getElementById('export-view'), {
+                scale: 2, backgroundColor: '#1a1a2e', logging: false, useCORS: true
+            });
+            const imgDataA = canvasA.toDataURL('image/jpeg', 0.9);
+            const pdfHeightA = (canvasA.height * pdfWidth) / canvasA.width;
+
+            // 新增第二頁，並貼上解答圖
+            pdf.addPage();
+            pdf.addImage(imgDataA, 'JPEG', 0, (pdf.internal.pageSize.getHeight()-pdfHeightA)/2, pdfWidth, pdfHeightA);
+
+            pdf.save('dice_puzzle.pdf');
+        } catch (e) {
+            console.error("Export PDF Error:", e);
+            alert('輸出 PDF 失敗，請重試。');
+        } finally {
+            // 恢復原本狀態
+            STATE.showPathNumbers = originalShowPathNums;
+            rebuild3DScene();
+            await setExportState(false);
+        }
+    });
+
+    els.exportPptBtn.addEventListener('click', async () => {
+         if(STATE.questions.length === 0 && STATE.path.length === 0) {
+            alert('請先設定路徑或題目再輸出。'); return;
+        }
+        await setExportState(true);
+        const originalShowPathNums = STATE.showPathNumbers;
+        
+        try {
+            els.exportStatus.textContent = '生成 PPTX 中...';
+            let pres = new PptxGenJS();
+            pres.layout = 'LAYOUT_16x9';
+
+            // --- Slide 1: Puzzle ---
+            STATE.showPathNumbers = false;
+            rebuild3DScene();
+            // We only need the 3D canvas image for PPT
+            renderer.render(scene, camera);
+            const imgDataQ = renderer.domElement.toDataURL('image/png', 1.0);
+
+            let slide1 = pres.addSlide();
+            slide1.background = { color: '1A1A2E' }; 
+            slide1.addImage({ data: imgDataQ, x: 0.5, y: 1.0, w: 7, h: 5.25, sizing: { type: 'contain' } });
+            slide1.addText('立體骰子解謎', { x: 8, y: 0.5, w: 5, h: 0.8, color: '60A5FA', fontSize: 32, bold: true });
+            
+            let yPos = 1.5;
+            STATE.questions.forEach((q, i) => {
+                if(q.trim()) {
+                    const formattedQ = q.replace(/\*/g, '×').replace(/\//g, '÷');
+                    slide1.addText(`${i+1}.  ${formattedQ}`, {
+                        x: 8, y: yPos, w: 5, h: 0.6,
+                        color: 'FFFFFF', fontSize: 24, bold: true,
+                        fill: { color: '3B82F6', transparency: 70 },
+                    });
+                    yPos += 0.8;
+                }
+            });
+
+            // --- Slide 2: Answers ---
+            STATE.showPathNumbers = true;
+            rebuild3DScene();
+            renderer.render(scene, camera);
+            const imgDataA = renderer.domElement.toDataURL('image/png', 1.0);
+
+            let slide2 = pres.addSlide();
+            slide2.background = { color: '1A1A2E' }; 
+            slide2.addImage({ data: imgDataA, x: 0.5, y: 1.0, w: 7, h: 5.25, sizing: { type: 'contain' } });
+            
+            slide2.addText('解答', { x: 8, y: 0.5, w: 5, h: 0.8, color: 'FBBF24', fontSize: 32, bold: true });
+            
+            let ansY = 1.5;
+            const vars = Object.keys(STATE.simulation.vars).sort();
+            const varsStr = vars.map(v => `${v}=${STATE.simulation.vars[v]}`).join(', ');
+            
+            slide2.addText(varsStr ? `變數: ${varsStr}` : '變數: 無', {
+                 x: 8, y: ansY, w: 5, h: 0.5, color: '93C5FD', fontSize: 18
+            });
+            ansY += 0.7;
+            
+            STATE.questions.forEach((q, i) => {
+                if(q.trim()) {
+                    const ans = evaluateExpression(q, STATE.simulation.vars);
+                    const formattedQ = q.replace(/\*/g, '×').replace(/\//g, '÷');
+                    slide2.addText(`${i+1}.  ${formattedQ} = ${ans}`, {
+                        x: 8, y: ansY, w: 5, h: 0.6,
+                        color: 'FFFFFF', fontSize: 22, bold: true,
+                        fill: { color: '3B82F6', transparency: 70 },
+                    });
+                    ansY += 0.7;
+                }
+            });
+
+            await pres.writeFile({ fileName: "dice_puzzle.pptx" });
+            
+        } catch (e) {
+            console.error("Export PPT Error:", e);
+            alert('輸出 PPTX 失敗，請重試。');
+        } finally {
+             // 恢復原本狀態
+            STATE.showPathNumbers = originalShowPathNums;
+            rebuild3DScene();
+            await setExportState(false);
+        }
+    });
+
+    // --- App Initialization ---
+    function init() {
+        updateFrontFaceOptions();
+        initGrid();
+        
+        STATE.questions.push('A + B - C');
+        renderQuestions();
+        
+        // Default path
+        STATE.path = [
+            {x: 2, y: 2}, {x: 3, y: 2}, {x: 4, y: 2}, 
+            {x: 4, y: 3}, {x: 5, y: 3}, {x: 6, y: 3},
+            {x: 6, y: 4}, {x: 7, y: 4}, {x: 8, y: 4}
+        ];
+        
+        STATE.variables = {
+            'A': {x: 4, y: 2, computedValue: null},
+            'B': {x: 5, y: 3, computedValue: null},
+            'C': {x: 7, y: 4, computedValue: null}
+        };
+
+        init3D();
+        updateGridUI();
+        updateDefinedVarsList();
+        
+        // Ensure simulation runs AND scene rebuilds so default values show up
+        simulateDiceRoll(); 
+        rebuild3DScene();
+    }
+
+    // Run when DOM is loaded
+    window.onload = init;
+
+</script>
+</body>
+</html>

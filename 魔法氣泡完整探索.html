@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>魔法氣泡連鎖探索</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #game-container { display: flex; gap: 2rem; justify-content: center; align-items: flex-start; margin-top: 2rem; flex-wrap: wrap; }
+        
+        .grid-board { 
+            position: relative; 
+            display: grid; 
+            grid-template-columns: repeat(6, 40px); 
+            grid-template-rows: repeat(12, 40px); 
+            gap: 1px; 
+            background-color: #1e293b; 
+            padding: 4px; 
+            border-radius: 8px; 
+            border: 2px solid #334155;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: max-content;
+        }
+        
+        .cell { width: 40px; height: 40px; background-color: #0f172a; border-radius: 4px; position: relative; }
+        
+        .puyo { 
+            width: 38px; height: 38px; 
+            border-radius: 50%; 
+            position: absolute; 
+            box-shadow: inset -5px -5px 10px rgba(0,0,0,0.3), inset 2px 2px 5px rgba(255,255,255,0.5);
+            transition: top 0.1s ease-in-out;
+            z-index: 10;
+        }
+        .puyo::after {
+            content: ''; position: absolute; top: 6px; left: 8px; width: 8px; height: 8px;
+            background: rgba(255,255,255,0.6); border-radius: 50%;
+        }
+        
+        /* 魔法氣泡顏色定義 */
+        .color-1 { background-color: #ef4444; } /* 紅色 */
+        .color-2 { background-color: #22c55e; } /* 綠色 */
+        .color-3 { background-color: #3b82f6; } /* 藍色 */
+        .color-4 { background-color: #eab308; } /* 黃色 */
+        .color-5 { background-color: #a855f7; } /* 紫色 */
+        .color-6 { background-color: #06b6d4; } /* 青色 */
+        .color-7 { background-color: #f97316; } /* 橘色 (干擾用) */
+        .color-8 { background-color: #ec4899; } /* 粉色 (干擾用) */
+        
+        .clearing { animation: pop 0.4s ease-out forwards; }
+        @keyframes pop { 0% { transform: scale(1); } 50% { transform: scale(1.3); opacity: 0.8; } 100% { transform: scale(0); opacity: 0; } }
+        
+        .panel { background-color: #1e293b; padding: 1.5rem; border-radius: 8px; width: 340px; border: 1px solid #334155; }
+        
+        /* 直觀控制器 */
+        .controller-box { margin-top: 1rem; background: #1e293b; padding: 1rem; border-radius: 12px; border: 2px solid #334155; }
+        .d-btn { background-color: #334155; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: white; font-weight: bold; user-select: none; transition: transform 0.1s, background 0.1s; }
+        .d-btn:active { background-color: #475569; transform: scale(0.95); }
+        .d-btn .icon { font-size: 1.5rem; line-height: 1.2; }
+        .d-btn .key { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
+        
+        #modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 50; justify-content: center; align-items: center; }
+        #modal-content { background: #1e293b; padding: 2rem; border-radius: 12px; max-width: 400px; text-align: center; border: 2px solid #3b82f6; }
+    </style>
+</head>
+<body>
+
+<div class="max-w-5xl mx-auto pt-6 px-4">
+    <div class="flex justify-between items-end mb-4 border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">魔法氣泡連鎖探索</h1>
+            <p class="text-slate-400 mt-1">邏輯佈局與空間翻摺的終極考驗</p>
+        </div>
+        <button onclick="downloadCode()" class="text-sm bg-slate-700 hover:bg-slate-600 px-3 py-2 rounded text-slate-200 transition border border-slate-500">💾 下載完整程式碼</button>
+    </div>
+
+    <div id="game-container">
+        <!-- 控制面板 -->
+        <div class="panel flex flex-col gap-4">
+            <div id="level-info">
+                <h2 id="level-title" class="text-xl font-bold text-white mb-2">載入中...</h2>
+                <p id="level-desc" class="text-sm text-slate-300 h-24"></p>
+            </div>
+            
+            <div class="bg-slate-900 p-4 rounded-lg flex justify-between items-center border border-slate-700">
+                <div>
+                    <div class="text-xs text-slate-400 font-bold mb-1">目標連鎖</div>
+                    <div id="target-chain" class="text-3xl font-black text-emerald-400">0</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-slate-400 font-bold mb-1">NEXT</div>
+                    <div id="next-preview" class="w-10 h-20 border border-slate-700 rounded bg-slate-800 relative mx-auto"></div>
+                </div>
+            </div>
+            
+            <div class="text-center">
+                <div class="text-xs text-slate-400 font-bold mb-1">當前連鎖</div>
+                <div id="current-chain" class="text-4xl font-black text-blue-400">0</div>
+            </div>
+
+            <button onclick="resetLevel()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-lg mt-2 border border-slate-500 transition shadow-lg">🔄 重新開始此關</button>
+            <button onclick="showLevelSelect()" class="text-slate-400 text-sm hover:text-white mt-1 border-b border-transparent hover:border-white transition">返回關卡選單</button>
+        </div>
+
+        <!-- 遊戲主畫面與控制器 -->
+        <div class="flex flex-col items-center">
+            <div id="board" class="grid-board shadow-2xl"></div>
+            
+            <!-- 帶有快速鍵標示的虛擬按鍵 -->
+            <div class="controller-box w-full max-w-sm">
+                <!-- 旋轉控制 -->
+                <div class="flex justify-center gap-4 mb-3">
+                    <button class="d-btn w-20 h-16 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 shadow" onclick="game.rotate(-1)">
+                        <span class="icon">⟲</span><span class="key">Z 鍵</span>
+                    </button>
+                    <button class="d-btn w-20 h-16 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 shadow" onclick="game.rotate(1)">
+                        <span class="icon">⟳</span><span class="key">↑ / X 鍵</span>
+                    </button>
+                </div>
+                <!-- 移動控制 -->
+                <div class="flex justify-center gap-3 mb-3">
+                    <button class="d-btn w-16 h-16 shadow" onclick="game.move(-1)">
+                        <span class="icon">◀</span><span class="key">←</span>
+                    </button>
+                    <button class="d-btn w-16 h-16 shadow" onclick="game.moveDown()">
+                        <span class="icon">▼</span><span class="key">↓</span>
+                    </button>
+                    <button class="d-btn w-16 h-16 shadow" onclick="game.move(1)">
+                        <span class="icon">▶</span><span class="key">→</span>
+                    </button>
+                </div>
+                <!-- 瞬間落下 -->
+                <div class="flex justify-center">
+                    <button class="d-btn w-full h-14 bg-red-600 hover:bg-red-500 border border-red-800 shadow" onclick="game.hardDrop()">
+                        <span class="icon text-lg">⏬ 瞬間落下</span><span class="key text-white/90">空白鍵 (Space)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 彈出視窗 -->
+<div id="modal">
+    <div id="modal-content">
+        <h2 id="modal-title" class="text-2xl font-bold mb-4 text-white"></h2>
+        <p id="modal-msg" class="text-slate-300 mb-6 whitespace-pre-line leading-relaxed"></p>
+        <div id="modal-buttons" class="flex gap-3 justify-center"></div>
+    </div>
+</div>
+
+<script>
+const COLS = 6;
+const ROWS = 12;
+
+const levels = [
+    {
+        name: "第 1 關：一觸即發 (1連鎖)",
+        desc: "旋轉氣泡為橫向，一次補齊兩個缺口！\n過關後將解鎖所有關卡！\n(請善用下方的鍵盤快速鍵)",
+        target: 1,
+        queue: [[1, 1]], 
+        board: [
+            {r:11, c:2, v:1}, {r:11, c:3, v:1}
+        ]
+    },
+    {
+        name: "第 2 關：重力分離 (2連鎖)",
+        desc: "將綠色掛在第1欄邊緣，讓紅色掉入谷底，完美引發連鎖。",
+        target: 2,
+        queue: [[2, 1]], 
+        board: [
+            {r:11, c:2, v:1}, {r:11, c:3, v:1}, {r:11, c:4, v:1},
+            {r:10, c:2, v:2}, {r:10, c:3, v:2}, {r:10, c:4, v:2}
+        ]
+    },
+    {
+        name: "第 3 關：階梯初探 (3連鎖)",
+        desc: "經典階梯連鎖：將紅色放入第1欄，觀察綠色與藍色如何相繼接力引爆！",
+        target: 3,
+        queue: [[2, 1]], 
+        board: [
+            {r:11, c:1, v:1}, {r:10, c:1, v:1}, {r:9, c:1, v:1},
+            {r:11, c:2, v:2}, {r:10, c:2, v:2}, {r:9, c:2, v:2}, {r:8, c:2, v:3},
+            {r:11, c:3, v:3}, {r:10, c:3, v:3}, {r:9, c:3, v:3}
+        ]
+    },
+    {
+        name: "第 4 關：GTR 折返 (3連鎖)",
+        desc: "教科書級別的 GTR！將紅色補入第1欄的引信處，欣賞綠色L型完美折返連鎖。",
+        target: 3,
+        queue: [[7, 1]], // 上橘、下紅
+        board: [
+            // 正統 GTR 完美陣型
+            {r:11, c:1, v:2}, {r:10, c:1, v:1}, {r:9, c:1, v:1}, // 第1欄 (引信)
+            {r:11, c:2, v:2}, {r:10, c:2, v:2}, {r:9, c:2, v:1}, {r:8, c:2, v:2}, {r:7, c:2, v:3}, // 第2欄 (L型緩衝與上方掉落物)
+            {r:11, c:3, v:3}, {r:10, c:3, v:3}, {r:9, c:3, v:3} // 第3欄 (藍色收尾)
+        ]
+    },
+    {
+        name: "第 5 關：兩步佈局 (4連鎖)",
+        desc: "這是一個4連鎖，但第2欄斷層了。\n請先用「藍/綠」補齊第2欄缺口，最後用「綠/紅」引爆第1欄！",
+        target: 4,
+        queue: [[3, 2], [2, 1]], 
+        board: [
+            {r:11, c:1, v:1}, {r:10, c:1, v:1}, {r:9, c:1, v:1}, 
+            {r:11, c:2, v:2}, {r:10, c:2, v:2}, 
+            {r:11, c:3, v:3}, {r:10, c:3, v:3}, {r:9, c:3, v:3}, {r:8, c:3, v:4},
+            {r:11, c:4, v:4}, {r:10, c:4, v:4}, {r:9, c:4, v:4} 
+        ]
+    },
+    {
+        name: "第 6 關：五連鎖深淵",
+        desc: "這是一組5連鎖，請將「黃/藍」精準填入第3欄的深淵，最後引爆第1欄！",
+        target: 5,
+        queue: [[4, 3], [2, 1]], 
+        board: [
+            {r:11, c:1, v:1}, {r:10, c:1, v:1}, {r:9, c:1, v:1},
+            {r:11, c:2, v:2}, {r:10, c:2, v:2}, {r:9, c:2, v:2}, {r:8, c:2, v:3},
+            {r:11, c:3, v:3}, {r:10, c:3, v:3}, 
+            {r:11, c:4, v:4}, {r:10, c:4, v:4}, {r:9, c:4, v:4}, {r:8, c:4, v:5},
+            {r:11, c:5, v:5}, {r:10, c:5, v:5}, {r:9, c:5, v:5} 
+        ]
+    },
+    {
+        name: "第 7 關：三步疊加 (5連鎖)",
+        desc: "3步佈局！請依序補齊第2欄的綠色、第3欄的藍色，最後點燃紅色的引信。",
+        target: 5,
+        queue: [[3, 2], [4, 3], [2, 1]], 
+        board: [
+            {r:11, c:1, v:1}, {r:10, c:1, v:1}, {r:9, c:1, v:1},
+            {r:11, c:2, v:2}, {r:10, c:2, v:2}, 
+            {r:11, c:3, v:3}, {r:10, c:3, v:3}, 
+            {r:11, c:4, v:4}, {r:10, c:4, v:4}, {r:9, c:4, v:4}, {r:8, c:4, v:5},
+            {r:11, c:5, v:5}, {r:10, c:5, v:5}, {r:9, c:5, v:5}
+        ]
+    },
+    {
+        name: "第 8 關：六連鎖總決賽",
+        desc: "4步極限佈局！依序將缺口補齊(第1、2、3欄)，並在最後一刻用紅色啟動跨越全場的 6 連鎖神話！",
+        target: 6,
+        queue: [[3, 2], [4, 3], [5, 4], [2, 1]], 
+        board: [
+            {r:11, c:0, v:1}, {r:10, c:0, v:1}, {r:9, c:0, v:1},
+            {r:11, c:1, v:2}, {r:10, c:1, v:2}, 
+            {r:11, c:2, v:3}, {r:10, c:2, v:3}, 
+            {r:11, c:3, v:4}, {r:10, c:3, v:4}, 
+            {r:11, c:4, v:5}, {r:10, c:4, v:5}, {r:9, c:4, v:5}, {r:8, c:4, v:6}, 
+            {r:11, c:5, v:6}, {r:10, c:5, v:6}, {r:9, c:5, v:6}
+        ]
+    }
+];
+
+let unlockedLevels = 1; 
+let currentLevelIdx = 0;
+let game = null;
+
+class PuyoGame {
+    constructor(levelIdx) {
+        this.level = levels[levelIdx];
+        this.board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        this.queue = [...this.level.queue];
+        this.currentPiece = null;
+        this.state = 'spawning'; 
+        this.chainCount = 0;
+        this.initBoard();
+        this.renderBackground();
+        this.spawnNext();
+    }
+
+    initBoard() {
+        this.level.board.forEach(p => {
+            this.board[p.r][p.c] = p.v;
+        });
+        document.getElementById('level-title').innerText = this.level.name;
+        document.getElementById('level-desc').innerText = this.level.desc;
+        document.getElementById('target-chain').innerText = this.level.target;
+        document.getElementById('current-chain').innerText = "0";
+    }
+
+    renderBackground() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                boardEl.appendChild(cell);
+            }
+        }
+        this.renderPuyos();
+    }
+
+    renderPuyos() {
+        const boardEl = document.getElementById('board');
+        boardEl.querySelectorAll('.puyo').forEach(e => e.remove());
+
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (this.board[r][c] !== 0) {
+                    this.createPuyoEl(r, c, this.board[r][c], boardEl);
+                }
+            }
+        }
+
+        if (this.currentPiece && this.state === 'falling') {
+            this.createPuyoEl(this.currentPiece.y, this.currentPiece.x, this.currentPiece.color1, boardEl);
+            this.createPuyoEl(this.currentPiece.subY, this.currentPiece.subX, this.currentPiece.color2, boardEl);
+        }
+    }
+
+    createPuyoEl(r, c, color, container) {
+        const puyo = document.createElement('div');
+        puyo.className = `puyo color-${color}`;
+        puyo.style.top = `${r * 41 + 5}px`;
+        puyo.style.left = `${c * 41 + 5}px`;
+        puyo.id = `puyo-${r}-${c}`;
+        container.appendChild(puyo);
+    }
+
+    updateNextPreview() {
+        const preview = document.getElementById('next-preview');
+        preview.innerHTML = '';
+        if (this.queue.length > 0) {
+            const colors = this.queue[0];
+            const p1 = document.createElement('div');
+            p1.className = `puyo color-${colors[0]}`;
+            p1.style.top = '2px'; p1.style.left = '1px';
+            const p2 = document.createElement('div');
+            p2.className = `puyo color-${colors[1]}`;
+            p2.style.top = '40px'; p2.style.left = '1px';
+            preview.appendChild(p1);
+            preview.appendChild(p2);
+        } else {
+            preview.innerHTML = '<div class="text-slate-600 text-xs text-center mt-8 font-bold">無</div>';
+        }
+    }
+
+    spawnNext() {
+        if (this.queue.length === 0) {
+            this.evaluateResult();
+            return;
+        }
+        const colors = this.queue.shift();
+        this.updateNextPreview();
+        this.currentPiece = { x: 2, y: 1, subX: 2, subY: 0, color1: colors[1], color2: colors[0], rot: 0 };
+        this.state = 'falling';
+        this.renderPuyos();
+    }
+
+    move(dx) {
+        if (this.state !== 'falling') return;
+        const newX = this.currentPiece.x + dx;
+        const newSubX = this.currentPiece.subX + dx;
+        if (this.isValid(newX, this.currentPiece.y) && this.isValid(newSubX, this.currentPiece.subY)) {
+            this.currentPiece.x = newX;
+            this.currentPiece.subX = newSubX;
+            this.renderPuyos();
+        }
+    }
+
+    moveDown() {
+        if (this.state !== 'falling') return;
+        const newY = this.currentPiece.y + 1;
+        const newSubY = this.currentPiece.subY + 1;
+        if (this.isValid(this.currentPiece.x, newY) && this.isValid(this.currentPiece.subX, newSubY)) {
+            this.currentPiece.y = newY;
+            this.currentPiece.subY = newSubY;
+            this.renderPuyos();
+        } else {
+            this.lockPiece();
+        }
+    }
+
+    hardDrop() {
+        if (this.state !== 'falling') return;
+        while (this.isValid(this.currentPiece.x, this.currentPiece.y + 1) && 
+               this.isValid(this.currentPiece.subX, this.currentPiece.subY + 1)) {
+            this.currentPiece.y++;
+            this.currentPiece.subY++;
+        }
+        this.lockPiece();
+    }
+
+    rotate(dir) {
+        if (this.state !== 'falling') return;
+        let newRot = (this.currentPiece.rot + dir + 4) % 4;
+        let nx = this.currentPiece.x, ny = this.currentPiece.y;
+        
+        if (newRot === 0) { nx = this.currentPiece.x; ny = this.currentPiece.y - 1; }
+        else if (newRot === 1) { nx = this.currentPiece.x + 1; ny = this.currentPiece.y; }
+        else if (newRot === 2) { nx = this.currentPiece.x; ny = this.currentPiece.y + 1; }
+        else if (newRot === 3) { nx = this.currentPiece.x - 1; ny = this.currentPiece.y; }
+
+        if (this.isValid(nx, ny)) {
+            this.currentPiece.subX = nx;
+            this.currentPiece.subY = ny;
+            this.currentPiece.rot = newRot;
+        } else if (this.isValid(this.currentPiece.x - 1, this.currentPiece.y) && newRot === 1) {
+            this.currentPiece.x--; this.currentPiece.subX = this.currentPiece.x + 1; this.currentPiece.rot = newRot;
+        } else if (this.isValid(this.currentPiece.x + 1, this.currentPiece.y) && newRot === 3) {
+            this.currentPiece.x++; this.currentPiece.subX = this.currentPiece.x - 1; this.currentPiece.rot = newRot;
+        }
+        this.renderPuyos();
+    }
+
+    isValid(x, y) {
+        return x >= 0 && x < COLS && y >= 0 && y < ROWS && this.board[y][x] === 0;
+    }
+
+    async lockPiece() {
+        this.state = 'resolving';
+        this.board[this.currentPiece.y][this.currentPiece.x] = this.currentPiece.color1;
+        this.board[this.currentPiece.subY][this.currentPiece.subX] = this.currentPiece.color2;
+        this.currentPiece = null;
+        
+        await this.applyGravity();
+        this.chainCount = 0;
+        await this.resolveMatches();
+    }
+
+    async applyGravity() {
+        let moved = true;
+        let drops = false;
+        while (moved) {
+            moved = false;
+            for (let c = 0; c < COLS; c++) {
+                for (let r = ROWS - 2; r >= 0; r--) {
+                    if (this.board[r][c] !== 0 && this.board[r+1][c] === 0) {
+                        this.board[r+1][c] = this.board[r][c];
+                        this.board[r][c] = 0;
+                        moved = true;
+                        drops = true;
+                    }
+                }
+            }
+        }
+        this.renderPuyos();
+        if(drops) await new Promise(r => setTimeout(r, 200));
+    }
+
+    async resolveMatches() {
+        let matchedGroups = this.findMatches();
+        if (matchedGroups.length > 0) {
+            this.chainCount++;
+            document.getElementById('current-chain').innerText = this.chainCount;
+            
+            matchedGroups.forEach(group => {
+                group.forEach(p => {
+                    let el = document.getElementById(`puyo-${p.r}-${p.c}`);
+                    if(el) el.classList.add('clearing');
+                });
+            });
+
+            await new Promise(r => setTimeout(r, 400)); 
+
+            matchedGroups.forEach(group => {
+                group.forEach(p => { this.board[p.r][p.c] = 0; });
+            });
+
+            await this.applyGravity();
+            await this.resolveMatches(); 
+        } else {
+            if (this.queue.length > 0) {
+                this.spawnNext();
+            } else {
+                this.evaluateResult();
+            }
+        }
+    }
+
+    findMatches() {
+        let visited = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+        let groups = [];
+        
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (this.board[r][c] !== 0 && !visited[r][c]) {
+                    let color = this.board[r][c];
+                    let group = [];
+                    let stack = [{r, c}];
+                    visited[r][c] = true;
+                    
+                    while (stack.length > 0) {
+                        let curr = stack.pop();
+                        group.push(curr);
+                        
+                        const dirs = [[-1,0], [1,0], [0,-1], [0,1]];
+                        for (let d of dirs) {
+                            let nr = curr.r + d[0], nc = curr.c + d[1];
+                            if (nr>=0 && nr<ROWS && nc>=0 && nc<COLS && !visited[nr][nc] && this.board[nr][nc] === color) {
+                                visited[nr][nc] = true;
+                                stack.push({r: nr, c: nc});
+                            }
+                        }
+                    }
+                    if (group.length >= 4) groups.push(group);
+                }
+            }
+        }
+        return groups;
+    }
+
+    evaluateResult() {
+        this.state = 'gameover';
+        if (this.chainCount >= this.level.target) {
+            
+            if (currentLevelIdx === 0) {
+                unlockedLevels = 8;
+            } else {
+                unlockedLevels = Math.max(unlockedLevels, currentLevelIdx + 2);
+            }
+
+            if (currentLevelIdx === levels.length - 1) {
+                showModal("🎉 全破恭喜！", "巧手翻摺空間變，\n藝數摺學趣味添。\n創藝文化展新局，\n連鎖佈局我最先！\n\n恭喜您完美破解所有關卡！", [
+                    { text: "返回選單", onClick: showLevelSelect }
+                ]);
+            } else {
+                let msg = `太棒了！您成功達成了 ${this.chainCount} 連鎖。\n是否要挑戰下一關？`;
+                if (currentLevelIdx === 0) msg += "\n\n⭐ 隱藏獎勵：您已成功解鎖剩餘所有關卡！";
+                
+                showModal("過關！", msg, [
+                    { text: "下一關", onClick: () => loadLevel(currentLevelIdx + 1) },
+                    { text: "返回選單", onClick: showLevelSelect }
+                ]);
+            }
+        } else {
+            showModal("挑戰失敗", `目標是 ${this.level.target} 連鎖，您只達成了 ${this.chainCount} 連鎖。\n佈局有誤，請再試一次！`, [
+                { text: "重新開始", onClick: resetLevel },
+                { text: "返回選單", onClick: showLevelSelect }
+            ]);
+        }
+    }
+}
+
+function loadLevel(idx) {
+    currentLevelIdx = idx;
+    hideModal();
+    document.getElementById('board').style.display = 'grid';
+    document.querySelector('.controller-box').style.display = 'block';
+    game = new PuyoGame(idx);
+}
+
+function resetLevel() {
+    if(game) loadLevel(currentLevelIdx);
+}
+
+function showLevelSelect() {
+    hideModal();
+    document.getElementById('board').style.display = 'none';
+    document.querySelector('.controller-box').style.display = 'none';
+    
+    document.getElementById('level-title').innerText = "關卡選擇";
+    document.getElementById('level-desc').innerText = "請選擇你要挑戰的佈局關卡";
+    document.getElementById('target-chain').innerText = "-";
+    document.getElementById('current-chain').innerText = "-";
+    document.getElementById('next-preview').innerHTML = '';
+
+    let content = `<div class="grid grid-cols-2 gap-4 w-[250px] mx-auto mt-8">`;
+    for(let i=0; i<levels.length; i++) {
+        let locked = i >= unlockedLevels;
+        content += `<button onclick="if(!${locked}) loadLevel(${i})" class="btn ${locked ? 'btn-locked' : ''} py-4 text-xl shadow">
+            ${locked ? '🔒' : (i+1)}
+        </button>`;
+    }
+    content += `</div>`;
+    
+    let boardContainer = document.getElementById('board').parentElement;
+    boardContainer.innerHTML = `<div id="board" class="grid-board" style="display:none;"></div><div class="controller-box w-full max-w-sm" style="display:none;"></div>` + content;
+    
+    document.querySelector('.controller-box').innerHTML = `
+        <div class="flex justify-center gap-4 mb-3">
+            <button class="d-btn w-20 h-16 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 shadow" onclick="game.rotate(-1)">
+                <span class="icon">⟲</span><span class="key">Z 鍵</span>
+            </button>
+            <button class="d-btn w-20 h-16 bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 shadow" onclick="game.rotate(1)">
+                <span class="icon">⟳</span><span class="key">↑ / X 鍵</span>
+            </button>
+        </div>
+        <div class="flex justify-center gap-3 mb-3">
+            <button class="d-btn w-16 h-16 shadow" onclick="game.move(-1)">
+                <span class="icon">◀</span><span class="key">←</span>
+            </button>
+            <button class="d-btn w-16 h-16 shadow" onclick="game.moveDown()">
+                <span class="icon">▼</span><span class="key">↓</span>
+            </button>
+            <button class="d-btn w-16 h-16 shadow" onclick="game.move(1)">
+                <span class="icon">▶</span><span class="key">→</span>
+            </button>
+        </div>
+        <div class="flex justify-center">
+            <button class="d-btn w-full h-14 bg-red-600 hover:bg-red-500 border border-red-800 shadow" onclick="game.hardDrop()">
+                <span class="icon text-lg">⏬ 瞬間落下</span><span class="key text-white/90">空白鍵 (Space)</span>
+            </button>
+        </div>
+    `;
+}
+
+function showModal(title, msg, buttons) {
+    document.getElementById('modal-title').innerText = title;
+    document.getElementById('modal-msg').innerText = msg;
+    const btnContainer = document.getElementById('modal-buttons');
+    btnContainer.innerHTML = '';
+    buttons.forEach(b => {
+        const btn = document.createElement('button');
+        btn.className = 'bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-6 rounded-lg transition shadow';
+        btn.innerText = b.text;
+        btn.onclick = b.onClick;
+        btnContainer.appendChild(btn);
+    });
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function hideModal() {
+    document.getElementById('modal').style.display = 'none';
+}
+
+function downloadCode() {
+    const htmlContent = document.documentElement.outerHTML;
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'PuyoExplorer_Ultimate.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+document.addEventListener('keydown', (e) => {
+    if (!game || game.state !== 'falling') return;
+    if (e.key === 'ArrowLeft') game.move(-1);
+    if (e.key === 'ArrowRight') game.move(1);
+    if (e.key === 'ArrowDown') game.moveDown();
+    if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'x') game.rotate(1);
+    if (e.key === 'z' || e.key === 'Z') game.rotate(-1);
+    if (e.key === ' ') { e.preventDefault(); game.hardDrop(); }
+});
+
+window.onload = () => showLevelSelect();
+</script>
+</body>
+</html>

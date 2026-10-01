@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>摩天大樓 建造挑戰 (難易度加時與不限時版)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .preserve-3d { transform-style: preserve-3d; }
+    .scene-container { perspective: 1200px; touch-action: none; }
+    body { -webkit-font-smoothing: antialiased; }
+    .building-part { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    /* 自訂捲軸樣式 */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fade-in-up { animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 font-sans text-gray-800 selection:bg-blue-200 overflow-x-hidden">
+
+  <!-- ================= 頂部狀態列 (HUD) ================= -->
+  <div id="hud" class="hidden sticky top-0 z-30 w-full bg-white border-b border-gray-200 shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+    <div class="flex items-center gap-4">
+      <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-lg font-bold border border-blue-200 flex items-center gap-2">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span id="hud-timer">00:00</span>
+      </div>
+      <div class="text-sm font-bold text-slate-500" id="hud-mode-text">一般模式</div>
+    </div>
+    
+    <div class="flex items-center gap-4">
+      <div class="text-xl font-black text-emerald-600 bg-emerald-50 px-4 py-1.5 rounded-lg border border-emerald-200">
+        總分: <span id="hud-score">0</span>
+      </div>
+      <button onclick="endGameManually()" class="bg-rose-500 hover:bg-rose-600 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm transition-colors text-sm">
+        停止並結算
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= 主遊戲畫面 ================= -->
+  <div id="game-screen" class="hidden max-w-4xl mx-auto py-8 px-4">
+    <header class="text-center mb-8">
+      <h1 class="text-4xl font-extrabold text-slate-800 mb-4 tracking-tight flex items-center justify-center gap-3">
+        <svg class="text-blue-600 w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+        摩天大樓 建造挑戰
+      </h1>
+      <p class="text-md text-slate-600 max-w-2xl mx-auto flex items-start justify-center gap-2">
+        <svg class="text-blue-500 shrink-0 mt-0.5" width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        外圍圈圈代表該方向能看到的大樓數量。點選空地蓋出大樓，附帶 🔒 標記的大樓為系統給予的提示。滿足所有視野並確保行列不重複！<br>
+        <span class="text-emerald-600 font-bold">⚡ 小提示：答對一行/列 +5秒；同高度全對 +3秒！(不限時模式無加秒)</span>
+      </p>
+    </header>
+
+    <!-- Toolbar: Tabs & Difficulty -->
+    <div class="flex flex-col lg:flex-row items-center justify-between bg-white p-3 rounded-2xl shadow-sm border border-gray-100 mb-6 gap-4">
+      <div class="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
+        <div class="flex flex-wrap justify-center gap-2 bg-slate-100 p-1 rounded-xl w-full sm:w-auto" id="tabs-container"></div>
+        <div class="flex flex-wrap justify-center gap-2 bg-indigo-50 p-1 rounded-xl w-full sm:w-auto border border-indigo-100" id="diff-container"></div>
+      </div>
+      
+      <button id="btn-giveup" onclick="attemptChangeLevel(activeSize, activeDifficulty)" class="w-full lg:w-auto flex justify-center items-center gap-2 px-6 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl font-bold transition-all shadow-sm active:scale-95 border border-amber-200">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        放棄換題
+      </button>
+    </div>
+
+    <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-blue-50 flex flex-col items-center relative">
+      <!-- Info & Solution Toggle -->
+      <div class="flex flex-col sm:flex-row items-center justify-between w-full max-w-3xl mb-4 gap-4">
+        <div class="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-500">
+          <div class="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full flex items-center gap-2 border border-blue-100">
+            <span id="level-info" class="font-bold"></span>
+          </div>
+        </div>
+
+        <label id="solution-toggle-label" class="flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer font-bold transition-all select-none border-2 bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100">
+          <input type="checkbox" id="solution-checkbox" class="hidden" onchange="attemptToggleSolution()">
+          <svg id="icon-eye" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: none;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          <svg id="icon-eye-off" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
+          顯示解答
+        </label>
+      </div>
+
+      <!-- 3D Canvas -->
+      <div id="scene-container" class="scene-container w-full max-w-3xl h-[450px] sm:h-[500px] relative rounded-xl bg-gradient-to-b from-blue-50/50 to-slate-100 overflow-hidden shadow-inner cursor-grab active:cursor-grabbing">
+        <div id="board-inner" class="preserve-3d absolute left-1/2 top-1/2 transition-all duration-300"></div>
+        
+        <!-- 準備階段遮罩 -->
+        <div id="level-start-overlay" class="absolute inset-0 z-20 bg-slate-900/10 backdrop-blur-md flex flex-col items-center justify-center hidden transition-all duration-300">
+            <div class="bg-white/95 p-6 sm:p-8 rounded-2xl shadow-xl text-center flex flex-col items-center gap-4 border border-blue-100 max-w-sm w-full mx-4">
+                <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-2">
+                    <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                </div>
+                <h3 class="text-2xl font-black text-slate-800">準備階段</h3>
+                <p class="text-slate-500 font-medium text-sm">請在上方調整您想要的尺寸與難易度。設定完成後點擊開始！</p>
+                <button onclick="startLevel()" class="mt-2 w-full px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white text-lg font-black rounded-xl shadow-lg transition-transform hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2">
+                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    開始挑戰
+                </button>
+            </div>
+        </div>
+
+      </div>
+
+      <!-- Camera Controls -->
+      <div class="flex flex-col sm:flex-row items-center gap-4 bg-slate-50 px-4 py-3 mt-4 rounded-xl border border-slate-100 justify-center w-full max-w-3xl">
+        <div class="flex items-center gap-2">
+          <svg class="text-slate-400" width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+          <input type="range" id="zoom-slider" min="0.3" max="1.5" step="0.05" value="1" class="w-16 accent-blue-500 cursor-pointer" oninput="updateCamera()">
+        </div>
+        <div class="w-full h-px sm:w-px sm:h-6 bg-slate-200"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-indigo-500 whitespace-nowrap">俯仰角</span>
+          <input type="range" id="elevation-slider" min="0" max="90" step="1" value="60" class="w-20 accent-indigo-500 cursor-pointer" oninput="updateElevation()">
+        </div>
+        <div class="w-full h-px sm:w-px sm:h-6 bg-slate-200"></div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold text-amber-500 whitespace-nowrap">旋轉</span>
+          <input type="range" id="rotate-slider" min="-135" max="225" step="1" value="45" class="w-24 sm:w-32 accent-amber-500 cursor-pointer" oninput="updateRotation()">
+        </div>
+        <div class="w-full h-px sm:w-px sm:h-6 bg-slate-200"></div>
+        <button onclick="resetCamera()" class="flex items-center gap-1 text-sm font-bold text-slate-500 hover:text-blue-600 transition-colors whitespace-nowrap">
+          重設
+        </button>
+      </div>
+
+      <!-- Number Pad -->
+      <div id="numpad" class="mt-4 flex flex-wrap justify-center gap-2 w-full transition-opacity opacity-100"></div>
+
+      <!-- Status Message -->
+      <div class="h-10 flex items-center justify-center w-full mt-4 mb-2">
+        <div id="status-msg" class="px-6 py-2 rounded-full font-bold text-sm shadow-sm animate-fade-in hidden transition-all duration-300"></div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-wrap justify-center gap-3 w-full">
+        <button onclick="clearUserGrid()" class="flex items-center gap-2 px-6 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold transition-all shadow-sm active:scale-95 border border-rose-200">
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+          推平大樓
+        </button>
+        <button onclick="validate()" class="flex items-center gap-2 px-10 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all active:scale-95">
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          提交驗證
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 開始主選單 ================= -->
+  <div id="start-screen" class="fixed inset-0 bg-slate-50 z-50 flex flex-col items-center justify-center px-4 overflow-y-auto">
+    <div class="max-w-lg w-full bg-white p-8 rounded-3xl shadow-2xl text-center border border-gray-100 my-8">
+      <div class="flex justify-center mb-6">
+        <div class="bg-blue-100 p-4 rounded-full">
+          <svg class="text-blue-600 w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+        </div>
+      </div>
+      <h1 class="text-4xl font-black text-slate-800 mb-2">摩天大樓 建造挑戰</h1>
+      <p class="text-slate-500 mb-8 font-medium">請選擇您的遊戲模式：</p>
+      
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <button onclick="startGame('normal')" class="relative overflow-hidden group bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-2xl font-bold shadow-lg transition-all hover:-translate-y-1">
+          <div class="relative z-10 text-xl flex items-center justify-center gap-2">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            一般闖關 (計時)
+          </div>
+          <div class="relative z-10 text-xs text-blue-200 mt-1 font-normal">過關賺取時間獎勵</div>
+        </button>
+
+        <button onclick="startGame('untimed')" class="relative overflow-hidden group bg-emerald-600 hover:bg-emerald-700 text-white p-4 rounded-2xl font-bold shadow-lg transition-all hover:-translate-y-1">
+          <div class="relative z-10 text-xl flex items-center justify-center gap-2">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            一般闖關 (不限時)
+          </div>
+          <div class="relative z-10 text-xs text-emerald-200 mt-1 font-normal">毫無壓力自由探索</div>
+        </button>
+      </div>
+        
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+        <button onclick="startGame('5min')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 p-4 rounded-2xl font-bold transition-all border border-indigo-200 hover:shadow-md">
+          <div class="text-lg mb-1">5 分鐘</div>
+          <div class="text-xs font-normal">限時挑戰</div>
+        </button>
+        <button onclick="startGame('10min')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 p-4 rounded-2xl font-bold transition-all border border-indigo-200 hover:shadow-md">
+          <div class="text-lg mb-1">10 分鐘</div>
+          <div class="text-xs font-normal">極限挑戰</div>
+        </button>
+        <button onclick="startGame('20min')" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 p-4 rounded-2xl font-bold transition-all border border-indigo-200 hover:shadow-md">
+          <div class="text-lg mb-1">20 分鐘</div>
+          <div class="text-xs font-normal">馬拉松挑戰</div>
+        </button>
+      </div>
+
+      <button onclick="showLeaderboards()" class="text-slate-500 hover:text-slate-700 font-bold underline underline-offset-4 transition-colors">
+        查看英雄榜
+      </button>
+    </div>
+  </div>
+
+  <!-- ================= 排行榜畫面 ================= -->
+  <div id="leaderboard-screen" class="fixed inset-0 bg-slate-50 z-50 hidden flex-col items-center justify-start py-10 px-4 overflow-y-auto">
+    <div class="max-w-3xl w-full bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-gray-100">
+      <div class="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
+        <h2 class="text-3xl font-black text-slate-800 flex items-center gap-2">
+          <svg class="text-amber-500 w-8 h-8" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1.323l3.954 1.582 1.599-.8a1 1 0 01.894 1.79l-1.233.616 1.738 5.42a1 1 0 01-.285 1.05A3.989 3.989 0 0115 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.715-5.349L11 6.477V16h2a1 1 0 110 2H7a1 1 0 110-2h2V6.477L6.237 7.582l1.715 5.349a1 1 0 01-.285 1.05A3.989 3.989 0 015 15a3.989 3.989 0 01-2.667-1.019 1 1 0 01-.285-1.05l1.738-5.42-1.233-.617a1 1 0 01.894-1.788l1.599.799L9 3.323V3a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+          英雄榜
+        </h2>
+        <button onclick="backToMenuFromLeaderboard()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-slate-600 transition-colors">
+          返回主選單
+        </button>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-6" id="lb-tabs">
+        <button onclick="renderLeaderboard('normal')" class="lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-blue-600 text-white shadow-sm">計時闖關</button>
+        <button onclick="renderLeaderboard('untimed')" class="lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">不限時闖關</button>
+        <button onclick="renderLeaderboard('5min')" class="lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">5分鐘限時</button>
+        <button onclick="renderLeaderboard('10min')" class="lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">10分鐘限時</button>
+        <button onclick="renderLeaderboard('20min')" class="lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200">20分鐘限時</button>
+      </div>
+
+      <div class="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden min-h-[300px]">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-200 text-slate-600 text-sm">
+              <th class="p-3 font-bold w-16 text-center">排名</th>
+              <th class="p-3 font-bold">玩家姓名</th>
+              <th class="p-3 font-bold text-right">總分</th>
+            </tr>
+          </thead>
+          <tbody id="lb-body">
+            <!-- 動態插入排行榜 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 共用自訂彈跳視窗 (Modal) ================= -->
+  <div id="custom-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] hidden flex items-center justify-center px-4">
+    <div class="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-sm w-full border border-gray-100 transform transition-all animate-fade-in-up">
+      <h3 id="modal-title" class="text-2xl font-black text-slate-800 mb-3">提示</h3>
+      <p id="modal-message" class="text-slate-600 font-medium mb-6 leading-relaxed"></p>
+      
+      <div id="modal-input-container" class="hidden mb-6">
+        <input type="text" id="modal-input" class="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-blue-500 focus:ring-0 font-bold text-slate-700 placeholder-slate-400 outline-none transition-colors" placeholder="輸入內容..." autocomplete="off">
+      </div>
+
+      <div class="flex gap-3 justify-end">
+        <button id="modal-cancel" class="px-5 py-2.5 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">取消</button>
+        <button id="modal-confirm" class="px-5 py-2.5 rounded-xl font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-md transition-colors">確定</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const CELL_SIZE = 64; 
+    const FLOOR_Z = 30;
+
+    // --- 遊戲設定與狀態 ---
+    const LEVEL_CONFIG = {
+      3: { score: 20, time: 60 },
+      4: { score: 50, time: 120 },
+      5: { score: 80, time: 240 },
+      6: { score: 120, time: 360 },
+      7: { score: 180, time: 480 },
+      8: { score: 250, time: 600 }
+    };
+
+    // 難易度分數加成倍率
+    const DIFF_SCORE_MULTIPLIER = {
+      'easy': 1.0,
+      'normal': 1.2,
+      'classic': 1.3,
+      'hard': 1.5
+    };
+
+    function getBaseScore(size, diff) {
+      return Math.floor(LEVEL_CONFIG[size].score * DIFF_SCORE_MULTIPLIER[diff]);
+    }
+
+    // 不同難易度對應的額外加時秒數
+    const DIFF_TIME_BONUS = {
+      'easy': 0,
+      'classic': 20,
+      'normal': 40,
+      'hard': 60
+    };
+
+    const GLOBAL_MODES = {
+      '5min': 5 * 60,
+      '10min': 10 * 60,
+      '20min': 20 * 60
+    };
+
+    const DIFFICULTY_SETTINGS = {
+      'classic': {
+        3: { outer: 12, inner: 0 },
+        4: { outer: 16, inner: 0 },
+        5: { outer: 20, inner: 0 },
+        6: { outer: 24, inner: 0 },
+        7: { outer: 28, inner: 0 },
+        8: { outer: 32, inner: 0 }
+      },
+      'easy': {
+        3: { outer: 10, inner: 1 },
+        4: { outer: 12, inner: 2 },
+        5: { outer: 15, inner: 3 },
+        6: { outer: 18, inner: 4 },
+        7: { outer: 21, inner: 5 },
+        8: { outer: 24, inner: 6 }
+      },
+      'normal': {
+        3: { outer: 8, inner: 0 },
+        4: { outer: 9, inner: 1 },
+        5: { outer: 11, inner: 2 },
+        6: { outer: 13, inner: 3 },
+        7: { outer: 15, inner: 4 },
+        8: { outer: 17, inner: 5 }
+      },
+      'hard': {
+        3: { outer: 6, inner: 0 },
+        4: { outer: 7, inner: 0 },
+        5: { outer: 8, inner: 0 },
+        6: { outer: 9, inner: 1 },
+        7: { outer: 10, inner: 2 },
+        8: { outer: 11, inner: 3 }
+      }
+    };
+    const DIFF_NAMES = { 'classic': '純外圍', 'easy': '簡單', 'normal': '普通', 'hard': '困難' };
+
+    // 狀態變數
+    let currentMode = 'normal'; // normal, untimed, 5min, 10min, 20min
+    let isGameActive = false;
+    let isLevelStarted = false; 
+    let totalScore = 0;
+    
+    let globalTimeLeft = 0; 
+    let levelTimeLeft = 0; 
+    let timerInterval = null;
+
+    let activeSize = 3;
+    let activeDifficulty = 'normal';
+    let puzzlesData = {}; 
+    let currentPuzzleSolved = false;
+    let currentPuzzleRevealed = false;
+
+    let zoom = 1;
+    let angle = 45;
+    let elevation = 60; 
+    let showSolution = false;
+    let selectedCell = null; 
+    let activeClickCell = null;
+
+    const leaderboards = { 'normal': [], 'untimed': [], '5min': [], '10min': [], '20min': [] };
+
+    const boardInner = document.getElementById('board-inner');
+    const numpad = document.getElementById('numpad');
+    const statusMsg = document.getElementById('status-msg');
+    const solutionCheckbox = document.getElementById('solution-checkbox');
+    const solutionLabel = document.getElementById('solution-toggle-label');
+    const sceneContainer = document.getElementById('scene-container');
+    const hud = document.getElementById('hud');
+    const gameScreen = document.getElementById('game-screen');
+    const startScreen = document.getElementById('start-screen');
+    const leaderboardScreen = document.getElementById('leaderboard-screen');
+    const levelInfo = document.getElementById('level-info');
+
+    // ================= 彈跳視窗 =================
+    function showModal(options) {
+      const modal = document.getElementById('custom-modal');
+      const titleEl = document.getElementById('modal-title');
+      const msgEl = document.getElementById('modal-message');
+      const inputContainer = document.getElementById('modal-input-container');
+      const inputEl = document.getElementById('modal-input');
+      const confirmBtn = document.getElementById('modal-confirm');
+      const cancelBtn = document.getElementById('modal-cancel');
+
+      titleEl.innerText = options.title || '提示';
+      msgEl.innerHTML = options.message || '';
+
+      if(options.type === 'prompt') {
+        inputContainer.classList.remove('hidden');
+        inputEl.value = '';
+        inputEl.placeholder = options.inputPlaceholder || '請輸入...';
+      } else {
+        inputContainer.classList.add('hidden');
+      }
+
+      if(options.type === 'alert') {
+        cancelBtn.classList.add('hidden');
+      } else {
+        cancelBtn.classList.remove('hidden');
+      }
+
+      confirmBtn.onclick = () => {
+        const val = inputEl.value.trim();
+        if(options.type === 'prompt' && !val && options.requireInput) return;
+        modal.classList.add('hidden');
+        if(options.onConfirm) options.onConfirm(val);
+      };
+
+      cancelBtn.onclick = () => {
+        modal.classList.add('hidden');
+        if(options.onCancel) options.onCancel();
+      };
+
+      modal.classList.remove('hidden');
+      if(options.type === 'prompt') setTimeout(() => inputEl.focus(), 100);
+    }
+
+    // ================= 遊戲流程控制 =================
+    function startGame(mode) {
+      currentMode = mode;
+      totalScore = 0;
+      isGameActive = true;
+      activeSize = 3;
+      activeDifficulty = 'normal';
+
+      if (mode === 'untimed') {
+        document.getElementById('hud-mode-text').innerText = '一般闖關 (不限時)';
+      } else if (mode !== 'normal') {
+        globalTimeLeft = GLOBAL_MODES[mode];
+        document.getElementById('hud-mode-text').innerText = `全局限時 (${mode.replace('min','')}分鐘)`;
+      } else {
+        document.getElementById('hud-mode-text').innerText = '一般闖關 (計時)';
+      }
+
+      startScreen.classList.add('hidden');
+      hud.classList.remove('hidden');
+      gameScreen.classList.remove('hidden');
+      
+      generateNewPuzzle(3, 'normal'); 
+      startTimer();
+    }
+
+    function startLevel() {
+      isLevelStarted = true;
+      render();
+      updateHUD(); 
+    }
+
+    function startTimer() {
+      if(timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        if(!isGameActive) return;
+        
+        // 準備階段暫停計時
+        if(!isLevelStarted) return;
+
+        if (currentMode === 'untimed') {
+          // 不限時模式不倒數時間
+        } else if (currentMode === 'normal') {
+          levelTimeLeft = Math.max(0, levelTimeLeft - 1);
+          if (levelTimeLeft <= 0 && !currentPuzzleSolved && !currentPuzzleRevealed) {
+            handleTimeUp();
+          }
+        } else {
+          globalTimeLeft--;
+          if (globalTimeLeft <= 0) {
+            globalTimeLeft = 0;
+            endGameManually("時間到！挑戰結束。");
+          }
+        }
+        updateHUD();
+      }, 1000);
+    }
+
+    function formatTime(secs) {
+      let m = Math.floor(secs / 60);
+      let s = secs % 60;
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function updateHUD() {
+      document.getElementById('hud-score').innerText = totalScore;
+      
+      if (!isLevelStarted) {
+         document.getElementById('hud-timer').innerText = "準備中";
+         document.getElementById('hud-timer').className = 'text-amber-500';
+      } else {
+        if (currentMode === 'untimed') {
+          document.getElementById('hud-timer').innerText = "∞ 不限時";
+          document.getElementById('hud-timer').className = 'text-blue-700';
+        } else if (currentMode === 'normal') {
+          document.getElementById('hud-timer').innerText = formatTime(levelTimeLeft);
+          document.getElementById('hud-timer').className = levelTimeLeft <= 10 ? 'text-rose-600' : 'text-blue-700';
+        } else {
+          document.getElementById('hud-timer').innerText = formatTime(globalTimeLeft);
+          document.getElementById('hud-timer').className = globalTimeLeft <= 30 ? 'text-rose-600' : 'text-blue-700';
+        }
+      }
+      
+      const currentBaseScore = getBaseScore(activeSize, activeDifficulty);
+      levelInfo.innerText = `${activeSize}×${activeSize} ${DIFF_NAMES[activeDifficulty]} | 基礎分: ${currentBaseScore} 分`;
+    }
+
+    function handleTimeUp() {
+      isGameActive = false;
+      showModal({
+        type: 'alert',
+        title: '時間到！',
+        message: `此題未在限時內完成，本題無得分，自動為您出新題。`,
+        onConfirm: () => {
+          isGameActive = true;
+          generateNewPuzzle(activeSize, activeDifficulty); 
+        }
+      });
+    }
+
+    function attemptChangeLevel(newSize, newDiff) {
+      const isSameConfig = (newSize === activeSize && newDiff === activeDifficulty);
+
+      // 準備階段、解開、看解答、不限時模式更換(無時間扣除問題，但仍算放棄題目的話就倒扣，維持懲罰機制)
+      if (!isLevelStarted || currentPuzzleSolved || currentPuzzleRevealed) {
+        generateNewPuzzle(newSize, newDiff);
+        return;
+      }
+
+      // 遊戲進行中，觸發扣分確認
+      const currentBaseScore = getBaseScore(activeSize, activeDifficulty);
+      const penalty = Math.floor(currentBaseScore / 2);
+      showModal({
+        title: isSameConfig ? '確認換一個盤面？' : '確認切換關卡？',
+        message: `尚未完成！現在換題將 <span class="text-rose-600 font-bold">倒扣 ${penalty} 分</span>，確定嗎？`,
+        onConfirm: () => { 
+          totalScore -= penalty; 
+          generateNewPuzzle(newSize, newDiff); 
+        }
+      });
+    }
+
+    function attemptToggleSolution() {
+      if (!isLevelStarted) {
+        showMessage('請先開始挑戰！', 'error');
+        solutionCheckbox.checked = false;
+        return;
+      }
+
+      if (!solutionCheckbox.checked) {
+        showSolution = false;
+        updateSolutionToggleUI();
+        renderBoard();
+        return;
+      }
+
+      if (!currentPuzzleSolved && !currentPuzzleRevealed) {
+        const penalty = getBaseScore(activeSize, activeDifficulty);
+        showModal({
+          title: '確認顯示解答？',
+          message: `看解答將 <span class="text-rose-600 font-bold">直接倒扣 ${penalty} 分</span>，且本題無法再獲得得分，確定嗎？`,
+          onConfirm: () => {
+            totalScore -= penalty;
+            currentPuzzleRevealed = true;
+            showSolution = true;
+            solutionCheckbox.checked = true;
+            updateSolutionToggleUI();
+            updateHUD();
+            renderBoard();
+          },
+          onCancel: () => { solutionCheckbox.checked = false; }
+        });
+      } else {
+        showSolution = true;
+        updateSolutionToggleUI();
+        renderBoard();
+      }
+    }
+
+    function endGameManually(msgTitle = "挑戰結算") {
+      isGameActive = false;
+      showModal({
+        type: 'prompt',
+        title: msgTitle,
+        message: `您的最終總分為：<span class="text-2xl text-emerald-600 font-black">${totalScore}</span><br><br>請輸入您的大名，記錄至排行榜：`,
+        inputPlaceholder: "玩家暱稱",
+        requireInput: true,
+        onConfirm: (name) => {
+          const playerName = name || "匿名英雄";
+          leaderboards[currentMode].push({ name: playerName, score: totalScore });
+          leaderboards[currentMode].sort((a, b) => b.score - a.score); 
+          
+          gameScreen.classList.add('hidden');
+          hud.classList.add('hidden');
+          showLeaderboards(currentMode);
+        },
+        onCancel: () => {
+          gameScreen.classList.add('hidden');
+          hud.classList.add('hidden');
+          startScreen.classList.remove('hidden');
+        }
+      });
+    }
+
+    // ================= 題庫與核心邏輯 =================
+    function countVisible(line) {
+      let visible = 0, max = 0;
+      for (let val of line) {
+        const height = parseInt(val, 10);
+        if (!isNaN(height) && height > max) { visible++; max = height; }
+      }
+      return visible;
+    }
+
+    function shuffleArray(array) {
+      let arr = [...array];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function createRandomPuzzleData(size, diff) {
+      let grid = [];
+      for (let r = 0; r < size; r++) {
+        let row = [];
+        for (let c = 0; c < size; c++) row.push(((r + c) % size) + 1);
+        grid.push(row);
+      }
+      grid = shuffleArray(grid);
+      let colIndices = shuffleArray(Array.from({length: size}, (_, i) => i));
+      grid = grid.map(row => colIndices.map(i => row[i]));
+      let symbols = shuffleArray(Array.from({length: size}, (_, i) => i + 1));
+      grid = grid.map(row => row.map(val => symbols[val - 1]));
+      grid = grid.map(row => row.map(val => String(val)));
+
+      let correctClues = { top: [], bottom: [], left: [], right: [] };
+      let allCluePositions = [];
+
+      for (let i = 0; i < size; i++) {
+        correctClues.top[i] = String(countVisible(grid.map(row => row[i])));
+        correctClues.bottom[i] = String(countVisible(grid.map(row => row[i]).reverse()));
+        correctClues.left[i] = String(countVisible(grid[i]));
+        correctClues.right[i] = String(countVisible([...grid[i]].reverse()));
+        
+        allCluePositions.push({side: 'top', index: i});
+        allCluePositions.push({side: 'bottom', index: i});
+        allCluePositions.push({side: 'left', index: i});
+        allCluePositions.push({side: 'right', index: i});
+      }
+
+      const settings = DIFFICULTY_SETTINGS[diff][size];
+      let displayClues = { top: Array(size).fill(''), bottom: Array(size).fill(''), left: Array(size).fill(''), right: Array(size).fill('') };
+      
+      shuffleArray(allCluePositions).slice(0, settings.outer).forEach(pos => {
+         displayClues[pos.side][pos.index] = correctClues[pos.side][pos.index];
+      });
+
+      let emptyGrid = Array.from({length: size}, () => Array(size).fill(''));
+      let lockedCells = [];
+      let allGridPositions = [];
+      for(let r=0; r<size; r++) {
+        for(let c=0; c<size; c++) allGridPositions.push({r, c});
+      }
+      
+      shuffleArray(allGridPositions).slice(0, settings.inner).forEach(pos => {
+        emptyGrid[pos.r][pos.c] = grid[pos.r][pos.c];
+        lockedCells.push({r: pos.r, c: pos.c});
+      });
+
+      return {
+        difficulty: diff,
+        solution: grid, 
+        userGrid: emptyGrid, 
+        lockedCells: lockedCells,
+        correctClues: correctClues, 
+        displayClues: displayClues, 
+        errorClues: { top: [], bottom: [], left: [], right: [] },
+        errorCells: [],
+        rewardedRows: Array(size).fill(false),
+        rewardedCols: Array(size).fill(false),
+        rewardedNumbers: Array(size + 1).fill(false)
+      };
+    }
+
+    function generateNewPuzzle(size, diff) {
+      activeSize = size;
+      activeDifficulty = diff;
+      puzzlesData[size] = createRandomPuzzleData(size, diff);
+      
+      isLevelStarted = false; 
+      currentPuzzleSolved = false;
+      currentPuzzleRevealed = false;
+      
+      // 給予對應難度的額外時間獎勵
+      levelTimeLeft = LEVEL_CONFIG[size].time + DIFF_TIME_BONUS[diff]; 
+      
+      if (showSolution) {
+        showSolution = false;
+        solutionCheckbox.checked = false;
+        updateSolutionToggleUI();
+      }
+      selectedCell = null;
+      resetCamera();
+      showMessage(''); 
+      
+      updateHUD();
+      render();
+    }
+
+    function getBuildingColor(height) {
+      const colors = [
+        { top: '#F3F4F6', side1: '#E5E7EB', side2: '#D1D5DB', text: '#9CA3AF' },
+        { top: '#A7F3D0', side1: '#34D399', side2: '#10B981', text: '#064E3B' },
+        { top: '#FDE047', side1: '#FACC15', side2: '#EAB308', text: '#713F12' },
+        { top: '#FDBA74', side1: '#FB923C', side2: '#F97316', text: '#7C2D12' },
+        { top: '#FCA5A5', side1: '#F87171', side2: '#EF4444', text: '#7F1D1D' },
+        { top: '#C4B5FD', side1: '#A78BFA', side2: '#8B5CF6', text: '#4C1D95' },
+        { top: '#93C5FD', side1: '#60A5FA', side2: '#3B82F6', text: '#1E3A8A' },
+        { top: '#FBCFE8', side1: '#F472B6', side2: '#EC4899', text: '#831843' },
+        { top: '#99F6E4', side1: '#2DD4BF', side2: '#14B8A6', text: '#134E4A' },
+      ];
+      return colors[height] || colors[0];
+    }
+
+    // ================= 畫面渲染 =================
+    function render() {
+      renderTabs();
+      renderDiffs();
+      renderButtons();
+      renderBoard();
+      renderNumpad();
+      updateCameraTransforms();
+    }
+
+    function renderTabs() {
+      const container = document.getElementById('tabs-container');
+      container.innerHTML = '';
+      for (let i = 3; i <= 8; i++) {
+        const btn = document.createElement('button');
+        btn.innerText = `${i} × ${i}`;
+        btn.onclick = () => attemptChangeLevel(i, activeDifficulty);
+        if (i === activeSize) btn.className = "flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-bold text-sm bg-blue-600 text-white shadow-sm whitespace-nowrap";
+        else btn.className = "flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-slate-200 whitespace-nowrap transition-colors";
+        container.appendChild(btn);
+      }
+    }
+
+    function renderDiffs() {
+      const container = document.getElementById('diff-container');
+      container.innerHTML = '';
+      const diffList = [
+        { id: 'classic', label: '純外圍' },
+        { id: 'easy', label: '簡單' },
+        { id: 'normal', label: '普通' },
+        { id: 'hard', label: '困難' }
+      ];
+      diffList.forEach(d => {
+        const btn = document.createElement('button');
+        btn.innerText = d.label;
+        btn.onclick = () => attemptChangeLevel(activeSize, d.id);
+        if (d.id === activeDifficulty) btn.className = "flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-bold text-sm bg-indigo-600 text-white shadow-sm whitespace-nowrap";
+        else btn.className = "flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-bold text-sm text-slate-600 hover:bg-indigo-100 whitespace-nowrap transition-colors";
+        container.appendChild(btn);
+      });
+    }
+
+    function renderButtons() {
+      const btnGiveup = document.getElementById('btn-giveup');
+      if (!isLevelStarted) {
+        btnGiveup.innerHTML = `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg> 換一個盤面`;
+        btnGiveup.className = "w-full lg:w-auto flex justify-center items-center gap-2 px-6 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-bold transition-all shadow-sm active:scale-95 border border-emerald-200";
+      } else if (currentPuzzleSolved || currentPuzzleRevealed) {
+        btnGiveup.innerHTML = `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg> 下一題`;
+        btnGiveup.className = "w-full lg:w-auto flex justify-center items-center gap-2 px-6 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl font-bold transition-all shadow-sm active:scale-95 border border-emerald-200";
+      } else {
+        btnGiveup.innerHTML = `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg> 放棄換題`;
+        btnGiveup.className = "w-full lg:w-auto flex justify-center items-center gap-2 px-6 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl font-bold transition-all shadow-sm active:scale-95 border border-amber-200";
+      }
+    }
+
+    function renderBoard() {
+      boardInner.innerHTML = ''; 
+      const boardWidth = activeSize * CELL_SIZE;
+      boardInner.style.width = `${boardWidth}px`;
+      boardInner.style.height = `${boardWidth}px`;
+      boardInner.style.marginLeft = `-${boardWidth / 2}px`;
+      boardInner.style.marginTop = `-${boardWidth / 2}px`;
+
+      const data = puzzlesData[activeSize];
+      const displayGrid = showSolution ? data.solution : data.userGrid;
+      const renderClues = showSolution ? data.correctClues : data.displayClues;
+
+      renderClues.top.forEach((val, c) => createClueNode(-1, c, val, 'top', c));
+      renderClues.bottom.forEach((val, c) => createClueNode(activeSize, c, val, 'bottom', c));
+      renderClues.left.forEach((val, r) => createClueNode(r, -1, val, 'left', r));
+      renderClues.right.forEach((val, r) => createClueNode(r, activeSize, val, 'right', r));
+
+      displayGrid.forEach((row, r) => {
+        row.forEach((val, c) => createBuildingNode(r, c, val));
+      });
+
+      // 處理遮罩與盤面模糊
+      const overlay = document.getElementById('level-start-overlay');
+      if (!isLevelStarted) {
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        boardInner.style.filter = 'blur(12px) opacity(0.8)';
+      } else {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+        boardInner.style.filter = 'none';
+      }
+
+      updateCameraTransforms();
+    }
+
+    function createClueNode(r, c, val, side, index) {
+      if (val === '') return; 
+
+      const isError = puzzlesData[activeSize].errorClues[side].includes(index);
+      const el = document.createElement('div');
+      el.className = 'preserve-3d absolute flex items-center justify-center';
+      el.style.left = `${c * CELL_SIZE}px`; el.style.top = `${r * CELL_SIZE}px`;
+      el.style.width = `${CELL_SIZE}px`; el.style.height = `${CELL_SIZE}px`;
+
+      const hitArea = document.createElement('div');
+      hitArea.className = `clue-hit-area absolute flex items-center justify-center cursor-default`;
+      hitArea.style.width = '64px'; hitArea.style.height = '64px';
+      
+      const circle = document.createElement('div');
+      circle.className = `flex items-center justify-center rounded-full shadow-md select-none transition-all`;
+      circle.style.width = '44px'; circle.style.height = '44px';
+      circle.style.backgroundColor = isError ? '#FEE2E2' : '#F3F4F6';
+      circle.style.border = isError ? '3px solid #EF4444' : '2px solid #D1D5DB';
+      circle.style.fontSize = '20px'; circle.style.fontWeight = 'bold';
+      circle.style.color = isError ? '#B91C1C' : '#4B5563';
+      circle.innerText = val || '-';
+
+      hitArea.appendChild(circle); el.appendChild(hitArea); boardInner.appendChild(el);
+    }
+
+    function createBuildingNode(r, c, heightStr) {
+      const h = parseInt(heightStr, 10) || 0;
+      const w = CELL_SIZE; const z = h * FLOOR_Z;
+      const colors = getBuildingColor(h);
+      
+      const data = puzzlesData[activeSize];
+      const isLocked = data.lockedCells.some(loc => loc.r === r && loc.c === c);
+      const isSelected = selectedCell?.r === r && selectedCell?.c === c && !showSolution && !currentPuzzleSolved && !isLocked && isLevelStarted;
+      const isError = data.errorCells.some(cell => cell.r === r && cell.c === c);
+
+      const el = document.createElement('div');
+      el.className = `preserve-3d absolute transition-all ${(!isLevelStarted || showSolution || currentPuzzleSolved || isLocked) ? 'cursor-default' : 'cursor-pointer hover:brightness-105'}`;
+      el.style.left = `${c * w}px`; el.style.top = `${r * w}px`;
+      el.style.width = `${w}px`; el.style.height = `${w}px`;
+
+      el.onpointerdown = (e) => { 
+        if (!isLevelStarted || showSolution || currentPuzzleSolved || isLocked) return; 
+        activeClickCell = {r, c}; 
+      };
+
+      if (h === 0) {
+        let baseBg = isSelected ? '#DBEAFE' : '#F1F5F9';
+        let baseBorder = isSelected ? '3px solid #3B82F6' : (isError ? '3px solid #EF4444' : '1px dashed #CBD5E1');
+        el.innerHTML = `<div class="absolute inset-0 flex items-center justify-center box-border transition-all" style="background-color:${baseBg}; border:${baseBorder}; transform:translateZ(0px);">${isSelected ? '<span class="rotate-inverse" style="color:#94A3B8; font-size:24px; font-weight:bold;">?</span>' : ''}</div>`;
+      } else {
+        let topBorder = isSelected ? '4px solid #3B82F6' : (isError ? '4px solid #EF4444' : '1px solid rgba(0,0,0,0.08)');
+        let zOffset = isSelected ? z + 4 : z;
+        let topBg = isError ? '#FEE2E2' : colors.top;
+        let textCol = isError ? '#B91C1C' : colors.text;
+
+        const lockIcon = isLocked ? `<svg class="absolute top-1 right-1 w-4 h-4 opacity-50 text-slate-800" fill="currentColor" viewBox="0 0 20 20"><path d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"/></svg>` : '';
+
+        el.innerHTML = `
+          <div class="preserve-3d absolute inset-0">
+            <div class="building-part absolute bottom-0 left-0 box-border" style="width:${w}px; height:${z}px; transform-origin:bottom; transform:rotateX(-90deg); background-color:${colors.side1}; border:1px solid rgba(0,0,0,0.08);"></div>
+            <div class="building-part absolute top-0 left-0 box-border" style="width:${w}px; height:${z}px; transform-origin:top; transform:rotateX(90deg); background-color:${colors.side2}; border:1px solid rgba(0,0,0,0.08);"></div>
+            <div class="building-part absolute top-0 left-0 box-border" style="width:${z}px; height:${w}px; transform-origin:left; transform:rotateY(-90deg); background-color:${colors.side1}; border:1px solid rgba(0,0,0,0.08);"></div>
+            <div class="building-part absolute top-0 right-0 box-border" style="width:${z}px; height:${w}px; transform-origin:right; transform:rotateY(90deg); background-color:${colors.side2}; border:1px solid rgba(0,0,0,0.08);"></div>
+            <div class="building-part absolute top-0 left-0 flex items-center justify-center box-border transition-all" style="width:${w}px; height:${w}px; transform:translateZ(${zOffset}px); background-color:${topBg}; border:${topBorder}; font-size:26px; font-weight:900; color:${textCol};">
+              <div class="rotate-inverse relative w-full h-full flex items-center justify-center">
+                ${h}
+                ${lockIcon}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      boardInner.appendChild(el);
+    }
+
+    function renderNumpad() {
+      numpad.innerHTML = '';
+      numpad.className = `mt-4 flex flex-wrap justify-center gap-2 w-full transition-opacity ${(!isLevelStarted || showSolution || currentPuzzleSolved) ? 'opacity-50 pointer-events-none' : 'opacity-100'}`;
+      for (let i = 1; i <= activeSize; i++) {
+        const btn = document.createElement('button'); btn.innerText = i;
+        btn.className = `w-12 h-12 sm:w-14 sm:h-14 rounded-xl font-black text-xl shadow-sm transition-all border-b-4 active:border-b-0 active:translate-y-1 ${selectedCell ? 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`;
+        btn.disabled = !selectedCell; btn.onclick = () => inputNumber(i.toString());
+        numpad.appendChild(btn);
+      }
+      const clearBtn = document.createElement('button'); clearBtn.innerText = '移除';
+      clearBtn.className = `px-4 h-12 sm:h-14 rounded-xl font-bold text-sm shadow-sm transition-all border-b-4 active:border-b-0 active:translate-y-1 ${selectedCell ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100' : 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'}`;
+      clearBtn.disabled = !selectedCell; clearBtn.onclick = () => inputNumber('');
+      numpad.appendChild(clearBtn);
+    }
+
+    // ================= 互動邏輯 =================
+    let dragState = { isDragging: false, startX: 0, startAngle: 45, moved: false };
+
+    sceneContainer.addEventListener('pointerdown', (e) => {
+      // 遮罩狀態下禁止拖曳旋轉
+      if (!isLevelStarted) return;
+      dragState.isDragging = true; dragState.startX = e.clientX; dragState.startAngle = angle; dragState.moved = false;
+      sceneContainer.setPointerCapture(e.pointerId); boardInner.style.transition = 'none'; 
+    });
+    sceneContainer.addEventListener('pointermove', (e) => {
+      if (!dragState.isDragging) return;
+      const deltaX = e.clientX - dragState.startX;
+      if (Math.abs(deltaX) > 5) dragState.moved = true; 
+      angle = dragState.startAngle - deltaX * 0.6; updateCameraTransforms();
+    });
+    const endDrag = (e) => {
+      if(dragState.isDragging) {
+        dragState.isDragging = false; sceneContainer.releasePointerCapture(e.pointerId); boardInner.style.transition = 'transform 0.1s ease-out';
+        if (!dragState.moved && activeClickCell) handleCellClick(activeClickCell.r, activeClickCell.c);
+      }
+      activeClickCell = null; 
+    };
+    sceneContainer.addEventListener('pointerup', endDrag); sceneContainer.addEventListener('pointercancel', endDrag);
+
+    function updateCamera() { zoom = parseFloat(document.getElementById('zoom-slider').value); updateCameraTransforms(); }
+    function updateRotation() { angle = parseFloat(document.getElementById('rotate-slider').value); updateCameraTransforms(); }
+    function updateElevation() { elevation = parseFloat(document.getElementById('elevation-slider').value); updateCameraTransforms(); }
+
+    function resetCamera() {
+      angle = 45; elevation = 60;
+      if (activeSize <= 4) zoom = 1; else if (activeSize === 5) zoom = 0.9; else if (activeSize === 6) zoom = 0.75; else if (activeSize === 7) zoom = 0.65; else if (activeSize === 8) zoom = 0.55;
+      document.getElementById('zoom-slider').value = zoom; document.getElementById('rotate-slider').value = 45; document.getElementById('elevation-slider').value = 60;
+      updateCameraTransforms();
+    }
+
+    function updateCameraTransforms() {
+      boardInner.style.transform = `scale(${zoom}) rotateX(${elevation}deg) rotateZ(${angle}deg)`;
+      document.querySelectorAll('.rotate-inverse').forEach(el => { el.style.transform = `rotateZ(${-angle}deg)`; });
+      document.querySelectorAll('.clue-hit-area').forEach(el => { el.style.transform = `rotateZ(${-angle}deg) rotateX(${-elevation}deg) translateZ(10px)`; });
+    }
+
+    function handleCellClick(r, c) {
+      if (!isLevelStarted) return;
+      selectedCell = { r, c };
+      puzzlesData[activeSize].errorClues = { top: [], bottom: [], left: [], right: [] };
+      puzzlesData[activeSize].errorCells = [];
+      showMessage(''); renderBoard(); renderNumpad();
+    }
+
+    function inputNumber(val) {
+      if (!isLevelStarted || !selectedCell || showSolution || currentPuzzleSolved) return;
+      const data = puzzlesData[activeSize];
+      // 二次確保不會修改到被鎖定的格子
+      if (data.lockedCells.some(loc => loc.r === selectedCell.r && loc.c === selectedCell.c)) return;
+
+      data.userGrid[selectedCell.r][selectedCell.c] = val;
+      data.errorClues = { top: [], bottom: [], left: [], right: [] };
+      data.errorCells = [];
+      
+      showMessage(''); 
+      renderBoard();
+      checkBonuses(); 
+    }
+
+    // --- 連線與數字獎勵檢查邏輯 ---
+    function checkBonuses() {
+      if (!isGameActive || showSolution || currentPuzzleSolved || !isLevelStarted) return;
+      
+      const data = puzzlesData[activeSize];
+      let newlySolvedCount = 0;
+      let newlySolvedNumbers = 0;
+
+      for (let r = 0; r < activeSize; r++) {
+        if (!data.rewardedRows[r]) {
+          let row = data.userGrid[r];
+          if (!row.includes('')) { 
+            let hasDuplicates = new Set(row).size !== activeSize;
+            if (!hasDuplicates) { 
+              if ((data.displayClues.left[r] === '' || countVisible(row) === parseInt(data.correctClues.left[r])) &&
+                  (data.displayClues.right[r] === '' || countVisible([...row].reverse()) === parseInt(data.correctClues.right[r]))) {
+                data.rewardedRows[r] = true;
+                newlySolvedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      for (let c = 0; c < activeSize; c++) {
+        if (!data.rewardedCols[c]) {
+          let col = data.userGrid.map(row => row[c]);
+          if (!col.includes('')) {
+            let hasDuplicates = new Set(col).size !== activeSize;
+            if (!hasDuplicates) {
+              if ((data.displayClues.top[c] === '' || countVisible(col) === parseInt(data.correctClues.top[c])) &&
+                  (data.displayClues.bottom[c] === '' || countVisible([...col].reverse()) === parseInt(data.correctClues.bottom[c]))) {
+                data.rewardedCols[c] = true;
+                newlySolvedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      for (let num = 1; num <= activeSize; num++) {
+        if (!data.rewardedNumbers[num]) {
+          let isAllCorrect = true;
+          let count = 0;
+          for (let r = 0; r < activeSize; r++) {
+            for (let c = 0; c < activeSize; c++) {
+              if (data.userGrid[r][c] === String(num)) {
+                count++;
+                if (data.solution[r][c] !== String(num)) isAllCorrect = false;
+              }
+            }
+          }
+          if (isAllCorrect && count === activeSize) {
+            data.rewardedNumbers[num] = true;
+            newlySolvedNumbers++;
+          }
+        }
+      }
+
+      let timeAdded = 0;
+      let msgs = [];
+
+      if (newlySolvedCount > 0) {
+        let bonus = newlySolvedCount >= 2 ? 8 : 5;
+        timeAdded += bonus;
+        msgs.push(currentMode === 'normal' ? `連線 +${bonus}秒` : `連線完成`);
+      }
+
+      if (newlySolvedNumbers > 0) {
+        let bonusNum = newlySolvedNumbers * 3;
+        timeAdded += bonusNum;
+        msgs.push(currentMode === 'normal' ? `同高度全對 +${bonusNum}秒` : `同高度全對`);
+      }
+
+      if (timeAdded > 0) {
+        if (currentMode === 'normal') {
+          levelTimeLeft += timeAdded;
+          updateHUD();
+          showMessage(`⚡ 完美！${msgs.join('，')}！`, 'success');
+        } else if (currentMode === 'untimed') {
+          showMessage(`⚡ 完美！${msgs.join('，')}！(不限時模式無加秒)`, 'success');
+        } else {
+          showMessage(`⚡ 完美！${msgs.join('，')}！`, 'success');
+        }
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (!isLevelStarted || !selectedCell || showSolution || currentPuzzleSolved) return;
+      const data = puzzlesData[activeSize];
+      if (data.lockedCells.some(loc => loc.r === selectedCell.r && loc.c === selectedCell.c)) return;
+
+      const key = e.key;
+      if (key >= '1' && key <= String(activeSize)) inputNumber(key);
+      else if (key === '0' || key === 'Backspace' || key === 'Delete') inputNumber('');
+      else if (key.startsWith('Arrow')) {
+        e.preventDefault(); let {r, c} = selectedCell;
+        if(key === 'ArrowUp') r = Math.max(0, r - 1);
+        if(key === 'ArrowDown') r = Math.min(activeSize - 1, r + 1);
+        if(key === 'ArrowLeft') c = Math.max(0, c - 1);
+        if(key === 'ArrowRight') c = Math.min(activeSize - 1, c + 1);
+        handleCellClick(r, c);
+      }
+    });
+
+    function updateSolutionToggleUI() {
+      if (showSolution) {
+        solutionLabel.className = 'flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer font-bold transition-all select-none border-2 bg-emerald-50 border-emerald-500 text-emerald-700';
+        document.getElementById('icon-eye').style.display = 'block'; document.getElementById('icon-eye-off').style.display = 'none';
+      } else {
+        solutionLabel.className = 'flex items-center gap-2 px-4 py-2 rounded-xl cursor-pointer font-bold transition-all select-none border-2 bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100';
+        document.getElementById('icon-eye').style.display = 'none'; document.getElementById('icon-eye-off').style.display = 'block';
+      }
+    }
+
+    function clearUserGrid() {
+      if (!isLevelStarted) { showMessage('請先開始挑戰！', 'error'); return; }
+      if(showSolution || currentPuzzleSolved) return; 
+      selectedCell = null;
+      let newGrid = Array.from({length: activeSize}, () => Array(activeSize).fill(''));
+      puzzlesData[activeSize].lockedCells.forEach(pos => {
+          newGrid[pos.r][pos.c] = puzzlesData[activeSize].solution[pos.r][pos.c];
+      });
+      puzzlesData[activeSize].userGrid = newGrid;
+      puzzlesData[activeSize].errorClues = { top: [], bottom: [], left: [], right: [] };
+      puzzlesData[activeSize].errorCells = [];
+      showMessage('已推平所有大樓！(保留系統提示)', 'success'); render();
+    }
+
+    // ================= 驗證與計分機制 =================
+    function validate() {
+      if (!isLevelStarted) { showMessage('請先開始挑戰！', 'error'); return; }
+      if (showSolution) { showMessage('目前正在查看解答模式喔！請先關閉。', 'error'); return; }
+      if (currentPuzzleSolved) { showMessage('此題已完成，請切換或重新出題！', 'success'); return; }
+
+      const data = puzzlesData[activeSize];
+      let userGrid = data.userGrid;
+      let correctClues = data.correctClues;
+      let displayClues = data.displayClues;
+      let allFilled = true;
+      let errorCells = [];
+      let errorClues = { top: [], bottom: [], left: [], right: [] };
+
+      for (let r = 0; r < activeSize; r++) {
+        for (let c = 0; c < activeSize; c++) { if (!userGrid[r][c]) allFilled = false; }
+      }
+      if (!allFilled) { showMessage('請先在每個空地建滿大樓，再進行驗證！', 'error'); return; }
+
+      let hasDuplicates = false;
+      for (let i = 0; i < activeSize; i++) {
+        let row = userGrid[i]; let col = userGrid.map(r => r[i]);
+        let rowCounts = {}; row.forEach(v => { if(v) rowCounts[v] = (rowCounts[v] || 0) + 1; });
+        row.forEach((v, c) => { if(v && rowCounts[v] > 1) { errorCells.push({r: i, c: c}); hasDuplicates = true; } });
+        let colCounts = {}; col.forEach(v => { if(v) colCounts[v] = (colCounts[v] || 0) + 1; });
+        col.forEach((v, r) => { if(v && colCounts[v] > 1) { errorCells.push({r: r, c: i}); hasDuplicates = true; } });
+      }
+
+      let clueViolated = false;
+      for (let i = 0; i < activeSize; i++) {
+        let row = userGrid[i]; let col = userGrid.map(r => r[i]);
+        if (displayClues.top[i] !== '' && countVisible(col) !== parseInt(correctClues.top[i])) { errorClues.top.push(i); clueViolated = true; }
+        if (displayClues.bottom[i] !== '' && countVisible([...col].reverse()) !== parseInt(correctClues.bottom[i])) { errorClues.bottom.push(i); clueViolated = true; }
+        if (displayClues.left[i] !== '' && countVisible(row) !== parseInt(correctClues.left[i])) { errorClues.left.push(i); clueViolated = true; }
+        if (displayClues.right[i] !== '' && countVisible([...row].reverse()) !== parseInt(correctClues.right[i])) { errorClues.right.push(i); clueViolated = true; }
+      }
+
+      data.errorCells = errorCells; data.errorClues = errorClues;
+      renderBoard(); 
+
+      if (hasDuplicates) {
+        showMessage('發現重複！每行每列的大樓高度不能重複，請檢查紅框標示的大樓！', 'error');
+      } else if (clueViolated) {
+        showMessage('部分大樓高度與外圍視野提示不符，請檢查紅色的提示圈圈！', 'error');
+      } else {
+        currentPuzzleSolved = true;
+        selectedCell = null;
+        renderBoard(); 
+        
+        let baseScore = getBaseScore(activeSize, activeDifficulty);
+        let bonusScore = 0;
+        
+        if (!currentPuzzleRevealed) {
+          if (currentMode === 'untimed') {
+            bonusScore = 0; // 不限時模式無時間獎勵
+          } else {
+            let targetTime = LEVEL_CONFIG[activeSize].time + DIFF_TIME_BONUS[activeDifficulty];
+            bonusScore = Math.floor(levelTimeLeft * (baseScore / targetTime));
+          }
+          if(bonusScore < 0) bonusScore = 0;
+          totalScore += baseScore + bonusScore;
+        }
+
+        updateHUD();
+        
+        if(currentPuzzleRevealed) {
+          showMessage('🎉 答案正確！(此題已顯示過解答，無獲得分數)', 'success');
+        } else {
+          let extraMsg = currentMode === 'untimed' ? '' : ` + 提早獎勵 ${bonusScore} 分`;
+          showMessage(`🎉 太神了！正確！獲得 ${baseScore} 分${extraMsg}！`, 'success');
+        }
+      }
+    }
+
+    function showMessage(msg, type = '') {
+      if (!msg) {
+        statusMsg.classList.add('hidden');
+        statusMsg.classList.remove('opacity-100');
+        return;
+      }
+      statusMsg.innerHTML = msg;
+      statusMsg.className = `px-6 py-2 rounded-full font-bold text-sm shadow-sm animate-fade-in transition-all duration-300 opacity-100 ${
+        type === 'error' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+      }`;
+    }
+
+    // ================= 排行榜系統 =================
+    function showLeaderboards(forceTab = 'normal') {
+      startScreen.classList.add('hidden');
+      gameScreen.classList.add('hidden');
+      hud.classList.add('hidden');
+      leaderboardScreen.classList.remove('hidden');
+      leaderboardScreen.classList.add('flex');
+      renderLeaderboard(forceTab);
+    }
+
+    function renderLeaderboard(mode) {
+      document.querySelectorAll('.lb-tab').forEach(btn => {
+        btn.className = "lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors";
+      });
+      const activeIdx = { 'normal': 0, 'untimed': 1, '5min': 2, '10min': 3, '20min': 4 }[mode];
+      document.querySelectorAll('.lb-tab')[activeIdx].className = "lb-tab px-4 py-2 rounded-lg font-bold text-sm bg-blue-600 text-white shadow-sm";
+
+      const tbody = document.getElementById('lb-body');
+      tbody.innerHTML = '';
+      
+      const records = leaderboards[mode];
+      if(records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="p-6 text-center text-slate-400 font-medium">尚無成績紀錄，趕快來挑戰！</td></tr>`;
+        return;
+      }
+
+      records.forEach((record, index) => {
+        let rankClass = "text-slate-500 font-bold";
+        if(index === 0) rankClass = "text-amber-500 font-black text-lg";
+        else if(index === 1) rankClass = "text-slate-400 font-black text-lg";
+        else if(index === 2) rankClass = "text-amber-700 font-black text-lg";
+
+        tbody.innerHTML += `
+          <tr class="border-b border-gray-100 hover:bg-white transition-colors">
+            <td class="p-3 text-center ${rankClass}">${index + 1}</td>
+            <td class="p-3 font-bold text-slate-700">${record.name}</td>
+            <td class="p-3 text-right font-black text-blue-600">${record.score}</td>
+          </tr>
+        `;
+      });
+    }
+
+    function backToMenuFromLeaderboard() {
+      leaderboardScreen.classList.add('hidden');
+      leaderboardScreen.classList.remove('flex');
+      startScreen.classList.remove('hidden');
+    }
+
+  </script>
+</body>
+</html>
